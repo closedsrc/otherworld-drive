@@ -7,22 +7,20 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
-import androidx.compose.foundation.background
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudUpload
@@ -46,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.dfc.mobile.ui.theme.Radii
@@ -154,18 +153,46 @@ private fun NavItem(
     }
 }
 
-/** Screen scaffold: consistent top padding and room for the floating bar. */
+/**
+ * Press feedback for the surfaces that behave like objects (cards, tiles,
+ * chips). The surface dips under the finger and springs back, which is what
+ * makes a tap feel handled. A 3% dip is enough to read; more looks like the
+ * card is falling over.
+ */
 @Composable
-fun DfcScreen(
-    content: @Composable (Modifier) -> Unit,
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .statusBarsPadding(),
+fun Modifier.pressFeedback(
+    interactionSource: MutableInteractionSource,
+    pressedScale: Float = 0.97f,
+): Modifier {
+    val pressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) pressedScale else 1f,
+        animationSpec = tween(120),
+        label = "press",
+    )
+    return this.graphicsLayer {
+        scaleX = scale
+        scaleY = scale
+    }
+}
+
+/**
+ * One-shot entrance used by the top of a screen: each block fades up shortly
+ * after the one above it, so the screen reads as arriving in the order you are
+ * meant to read it. Only the first few blocks stagger; the rest of a list
+ * appears at once, because a long stagger just makes scrolling feel broken.
+ *
+ * The flag is owned by the caller rather than by this composable so a list item
+ * that scrolls out and back does not replay the entrance.
+ */
+@Composable
+fun RiseIn(visible: Boolean, index: Int = 0, content: @Composable () -> Unit) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(tween(200, delayMillis = index * 45)) +
+            slideInVertically(tween(240, delayMillis = index * 45)) { it / 7 },
     ) {
-        content(Modifier.fillMaxSize())
+        content()
     }
 }
 
@@ -199,35 +226,6 @@ fun ScreenTitle(
         }
         trailing?.invoke()
     }
-}
-
-/** Small circular badge for counts; used by nav-adjacent labels only. */
-@Composable
-fun CountBadge(count: Int, modifier: Modifier = Modifier) {
-    if (count <= 0) return
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(999.dp))
-            .background(MaterialTheme.colorScheme.primary)
-            .padding(horizontal = 6.dp, vertical = 1.dp),
-    ) {
-        Text(
-            text = if (count > 99) "99+" else count.toString(),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onPrimary,
-        )
-    }
-}
-
-/** Thin hairline used to lift the top bar off scrolled content. */
-@Composable
-fun TopBarDivider() {
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .height(1.dp)
-            .background(MaterialTheme.colorScheme.outlineVariant)
-    )
 }
 
 /** Compact top bar for screens that morph into selection mode. */
@@ -281,20 +279,8 @@ fun BarIcon(
     }
 }
 
-/** Reusable spacer that keeps scroll content clear of the floating bar. */
-@Composable
-fun NavClearance() {
-    Spacer(Modifier.height(Spacing.navClearance))
-}
-
 /** Vertical gap helper so screens do not hand-roll spacing values. */
 @Composable
 fun Gap(height: androidx.compose.ui.unit.Dp) {
     Spacer(Modifier.height(height))
-}
-
-/** Horizontal gap helper with the same purpose. */
-@Composable
-fun HGap(width: androidx.compose.ui.unit.Dp) {
-    Spacer(Modifier.width(width))
 }

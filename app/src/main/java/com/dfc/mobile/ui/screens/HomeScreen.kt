@@ -4,11 +4,13 @@ import com.dfc.mobile.ui.components.PrimaryButton
 import com.dfc.mobile.ui.components.GhostButton
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -18,7 +20,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CloudDone
@@ -28,17 +29,23 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.dfc.mobile.DfcApi
 import com.dfc.mobile.RemoteFile
-import com.dfc.mobile.Prefs
 import com.dfc.mobile.backup.UploadTracker
 import com.dfc.mobile.data.MediaItem
+import com.dfc.mobile.ui.RiseIn
 import com.dfc.mobile.ui.formatBytes
+import com.dfc.mobile.ui.pressFeedback
 import com.dfc.mobile.ui.relativeTime
 import com.dfc.mobile.ui.DfcViewModel
 import com.dfc.mobile.ui.ScreenTitle
@@ -71,42 +78,53 @@ fun HomeScreen(
     val current by UploadTracker.current.collectAsState()
     val storage = ui.storage
 
+    // The top blocks fade up in reading order, once per visit. The flag lives
+    // here rather than inside RiseIn so a recycled item does not replay it.
+    var revealed by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { revealed = true }
+
     LazyColumn(
         modifier = modifier,
         contentPadding = PaddingValues(bottom = Spacing.navClearance),
     ) {
         item(key = "title") {
-            ScreenTitle(
-                title = greeting(),
-                subtitle = if (ui.configured) {
-                    val backend = storage?.primaryBackend ?: "the server"
-                    "Backed by $backend"
-                } else {
-                    "Not connected yet"
-                },
-            )
+            RiseIn(visible = revealed, index = 0) {
+                ScreenTitle(
+                    title = greeting(),
+                    subtitle = if (ui.configured) {
+                        val backend = storage?.primaryBackend ?: "the server"
+                        "Backed by $backend"
+                    } else {
+                        "Not connected yet"
+                    },
+                )
+            }
         }
 
         item(key = "ring") {
-            StorageCard(
-                storage = storage,
-                pending = ui.pending,
-                backedUp = ui.backedUp,
-                lastBackupAt = ui.lastBackupAt,
-                running = running,
-                currentName = current?.displayName,
-                onBackupNow = onBackupNow,
-            )
+            RiseIn(visible = revealed, index = 1) {
+                StorageCard(
+                    storage = storage,
+                    pending = ui.pending,
+                    backedUp = ui.backedUp,
+                    lastBackupAt = ui.lastBackupAt,
+                    running = running,
+                    job = if (running) current else null,
+                    onBackupNow = onBackupNow,
+                )
+            }
         }
 
         item(key = "actions") {
-            Spacer(Modifier.height(Spacing.lg))
-            Box(Modifier.padding(horizontal = Spacing.md)) {
-                QuickActions(
-                    onUpload = onBackupNow,
-                    onCreateFolder = onCreateFolder,
-                    onShare = onShare,
-                )
+            RiseIn(visible = revealed, index = 2) {
+                Spacer(Modifier.height(Spacing.lg))
+                Box(Modifier.padding(horizontal = Spacing.md)) {
+                    QuickActions(
+                        onUpload = onBackupNow,
+                        onCreateFolder = onCreateFolder,
+                        onShare = onShare,
+                    )
+                }
             }
         }
 
@@ -156,9 +174,9 @@ fun HomeScreen(
 }
 
 /**
- * The storage figure plus the live state of the drive. The ring shows the share
- * of the server's disk the drive occupies, which is the only ratio the backend
- * reports; there is no quota, so no "of X GB" claim is made.
+ * The storage figure plus the live state of the drive. The centre figure is the
+ * sum of what the drive holds; the third stat names the storage model instead of
+ * the host disk, because the drive is backed by Telegram and has no quota.
  */
 @Composable
 private fun StorageCard(
@@ -167,7 +185,7 @@ private fun StorageCard(
     backedUp: Int,
     lastBackupAt: Long,
     running: Boolean,
-    currentName: String?,
+    job: UploadTracker.Job?,
     onBackupNow: () -> Unit,
 ) {
     val shape = RoundedCornerShape(Radii.card)
@@ -181,34 +199,36 @@ private fun StorageCard(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         val totalBytes = storage?.totalBytes ?: 0L
-        val diskFree = storage?.diskFreeBytes ?: 0L
-        val usedFraction = if (totalBytes + diskFree > 0) {
-            totalBytes.toFloat() / (totalBytes + diskFree).toFloat()
-        } else 0f
+        val backend = storage?.primaryBackend ?: "the server"
 
         StorageRing(
-            usedFraction = usedFraction,
+            progress = job?.fraction,
             centerValue = if (storage == null) "..." else formatBytes(totalBytes),
-            centerLabel = "stored on the drive",
+            centerLabel = if (job != null) "sending" else "stored",
         )
 
         Spacer(Modifier.height(Spacing.lg))
 
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Stat(
                 value = (storage?.filesCount ?: 0).toString(),
                 label = "files",
+                modifier = Modifier.weight(1f),
             )
+            StatDivider()
             Stat(
                 value = backedUp.toString(),
-                label = "from this phone",
+                label = "phone",
+                modifier = Modifier.weight(1f),
             )
+            StatDivider()
             Stat(
-                value = if (diskFree > 0) formatBytes(diskFree) else "unknown",
-                label = "server disk free",
+                value = "Unlimited",
+                label = backend,
+                modifier = Modifier.weight(1f),
             )
         }
 
@@ -217,16 +237,20 @@ private fun StorageCard(
         SyncLine(
             running = running,
             pending = pending,
-            currentName = currentName,
+            job = job,
             lastBackupAt = lastBackupAt,
             onBackupNow = onBackupNow,
         )
     }
 }
 
+/** Equal columns, so the three figures share one baseline and one rhythm. */
 @Composable
-private fun Stat(value: String, label: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+private fun RowScope.Stat(value: String, label: String, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
         Text(
             text = value,
             style = MaterialTheme.typography.titleMedium,
@@ -238,29 +262,50 @@ private fun Stat(value: String, label: String) {
             text = label,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
         )
     }
 }
 
+@Composable
+private fun StatDivider() {
+    Box(
+        Modifier
+            .padding(horizontal = Spacing.sm)
+            .width(1.dp)
+            .height(28.dp)
+            .background(MaterialTheme.colorScheme.outlineVariant)
+    )
+}
+
 /**
- * Sync status. While a transfer is live it names the file; otherwise it reports
- * what is waiting and when the last run finished.
+ * Sync status. While a transfer is live it names the file and the measured rate;
+ * otherwise it reports what is waiting and when the last run finished.
  */
 @Composable
 private fun SyncLine(
     running: Boolean,
     pending: Int,
-    currentName: String?,
+    job: UploadTracker.Job?,
     lastBackupAt: Long,
     onBackupNow: () -> Unit,
 ) {
     val shape = RoundedCornerShape(Radii.control)
+    val interaction = remember { MutableInteractionSource() }
     val (icon, tint, text) = when {
-        running && currentName != null -> Triple(
+        job != null -> Triple(
             Icons.Outlined.Sync,
             MaterialTheme.colorScheme.primary,
-            "Sending $currentName",
+            buildString {
+                append("Sending ${job.displayName}")
+                if (job.bytesPerSecond > 0L) append(" · ${formatBytes(job.bytesPerSecond)}/s")
+            },
+        )
+        running -> Triple(
+            Icons.Outlined.Sync,
+            MaterialTheme.colorScheme.primary,
+            "Checking for new photos",
         )
         pending > 0 -> Triple(
             Icons.Outlined.CloudOff,
@@ -281,9 +326,10 @@ private fun SyncLine(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .pressFeedback(interaction)
             .clip(shape)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .clickable(onClick = onBackupNow)
+            .clickable(interactionSource = interaction, indication = null, onClick = onBackupNow)
             .padding(horizontal = Spacing.md, vertical = Spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -303,7 +349,11 @@ private fun SyncLine(
             modifier = Modifier.weight(1f),
         )
         Text(
-            text = if (running) "Running" else "Back up",
+            text = when {
+                job != null -> "${(job.fraction * 100).toInt()}%"
+                running -> "Running"
+                else -> "Back up"
+            },
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.primary,
         )
@@ -314,12 +364,14 @@ private fun SyncLine(
 @Composable
 private fun RecentCard(item: MediaItem, onClick: () -> Unit) {
     val shape = RoundedCornerShape(Radii.card)
+    val interaction = remember { MutableInteractionSource() }
     Column(
         modifier = Modifier
             .width(132.dp)
+            .pressFeedback(interaction)
             .clip(shape)
             .background(MaterialTheme.colorScheme.surfaceContainer)
-            .clickable(onClick = onClick)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(Spacing.xs),
     ) {
         Thumb(

@@ -15,10 +15,13 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -108,6 +111,11 @@ private fun DfcRoot() {
 
     val snackbar = remember { SnackbarHostState() }
 
+    // Every tab draws edge to edge, so the status bar inset is applied once
+    // here instead of in each screen. Without it the page title lands under the
+    // clock and the battery icons.
+    val screenInsets = Modifier.fillMaxSize().statusBarsPadding()
+
     // Media permission is requested once, on first composition. A denial is not
     // fatal: browsing the drive still works, only local scanning is blocked.
     val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
@@ -145,7 +153,20 @@ private fun DfcRoot() {
     Box(Modifier.fillMaxSize()) {
         AnimatedContent(
             targetState = tab,
-            transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+            transitionSpec = {
+                // Moving right along the bar pushes the new screen in from the
+                // right; the small offset signals direction without a full
+                // page slide that would fight the scroll position.
+                val forward = targetState.ordinal > initialState.ordinal
+                val push = if (forward) 1 else -1
+                (
+                    slideInHorizontally(tween(240)) { width -> push * width / 12 } +
+                        fadeIn(tween(200))
+                    ) togetherWith (
+                    slideOutHorizontally(tween(200)) { width -> -push * width / 12 } +
+                        fadeOut(tween(140))
+                    )
+            },
             label = "tab",
         ) { dest ->
             when (dest) {
@@ -163,7 +184,7 @@ private fun DfcRoot() {
                     onShare = { overlay = Overlay.Links },
                     onCreateFolder = { tab = Destination.FILES; showNewFolder = true },
                     onOpenPreview = { item, list -> overlay = Overlay.Preview(list, list.indexOf(item)) },
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = screenInsets,
                 )
 
                 Destination.FILES -> FilesScreen(
@@ -225,14 +246,14 @@ private fun DfcRoot() {
                     },
                     onRefresh = { vm.refresh() },
                     classify = vm::classify,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = screenInsets,
                 )
 
                 Destination.UPLOADS -> UploadsScreen(
                     ui = ui,
                     onBackupNow = { vm.backupNow() },
                     onOpenFiles = { tab = Destination.FILES },
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = screenInsets,
                 )
 
                 Destination.SEARCH -> SearchScreen(
@@ -246,7 +267,7 @@ private fun DfcRoot() {
                     onOpenGallery = { item, list -> overlay = Overlay.Preview(list, list.indexOf(item)) },
                     onSearchRemote = { query -> vm.searchRemote(query) },
                     classify = vm::classify,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = screenInsets,
                 )
 
                 Destination.SETTINGS -> SettingsScreen(
@@ -261,7 +282,7 @@ private fun DfcRoot() {
                     onOpenServerSetup = { overlay = Overlay.Setup },
                     onBackupNow = { vm.backupNow() },
                     onOpenUploads = { tab = Destination.UPLOADS },
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = screenInsets,
                 )
             }
         }

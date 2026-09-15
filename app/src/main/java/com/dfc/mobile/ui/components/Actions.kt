@@ -2,6 +2,7 @@ package com.dfc.mobile.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -45,6 +46,7 @@ import com.dfc.mobile.DfcApi
 import com.dfc.mobile.backup.BackupWorker
 import com.dfc.mobile.ui.DfcViewModel
 import com.dfc.mobile.ui.formatBytes
+import com.dfc.mobile.ui.pressFeedback
 import com.dfc.mobile.ui.theme.Radii
 import com.dfc.mobile.ui.theme.Spacing
 import kotlinx.coroutines.launch
@@ -95,11 +97,13 @@ fun ActionChip(
     modifier: Modifier = Modifier,
 ) {
     val shape = RoundedCornerShape(Radii.card)
+    val interaction = remember { MutableInteractionSource() }
     Column(
         modifier = modifier
+            .pressFeedback(interaction)
             .clip(shape)
             .background(MaterialTheme.colorScheme.surfaceContainer)
-            .clickable(onClick = onClick)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(vertical = Spacing.md),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {

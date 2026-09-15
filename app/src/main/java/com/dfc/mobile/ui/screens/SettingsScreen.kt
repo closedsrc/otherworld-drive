@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AllInclusive
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Star
@@ -100,9 +101,9 @@ fun SettingsScreen(
                         onClick = {},
                     )
                     SettingRow(
-                        icon = Icons.Outlined.Star,
-                        title = formatBytes(s.diskFreeBytes) + " free on the server",
-                        subtitle = "Space available to the drive process",
+                        icon = Icons.Outlined.AllInclusive,
+                        title = "Unlimited storage",
+                        subtitle = s.primaryBackend,
                         onClick = {},
                     )
                 }

@@ -18,23 +18,24 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 
 /**
- * The home screen's focal point. It animates only on a real value change, so
- * it reads as a measurement arriving rather than decoration. The arc shows the
- * share of the server's disk that the drive's own files occupy, which is the
- * one ratio the backend can actually report.
+ * The home screen's focal point. The arc carries live transfer progress and sits
+ * as an empty track the rest of the time: the drive is backed by Telegram and has
+ * no quota, so there is no capacity ratio worth drawing. The centre figure is the
+ * stored total, which is a real sum the server reports.
  */
 @Composable
 fun StorageRing(
-    usedFraction: Float,
+    progress: Float?,
     centerValue: String,
     centerLabel: String,
     modifier: Modifier = Modifier,
     diameter: androidx.compose.ui.unit.Dp = 168.dp,
 ) {
-    val target = usedFraction.coerceIn(0f, 1f)
     val sweep by animateFloatAsState(
-        targetValue = target,
-        animationSpec = tween(durationMillis = 700),
+        targetValue = progress?.coerceIn(0f, 1f) ?: 0f,
+        // Shorter while a file is moving: the tracker emits per chunk, so a long
+        // tween would lag behind and read as a stall.
+        animationSpec = tween(durationMillis = if (progress == null) 400 else 220),
         label = "ring",
     )
     val track = MaterialTheme.colorScheme.outlineVariant
