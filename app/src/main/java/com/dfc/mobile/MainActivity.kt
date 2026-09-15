@@ -25,6 +25,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,7 +34,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.dfc.mobile.RemoteFile
 import com.dfc.mobile.data.MediaItem
@@ -93,7 +93,10 @@ private sealed interface Overlay {
 private fun DfcRoot() {
     val context = LocalContext.current
     val vm: DfcViewModel = viewModel()
-    val ui by vm.ui.collectAsStateWithLifecycle()
+    // Compose 1.6.8 is pinned by the Kotlin 1.9.24 compiler, and it never
+    // provides the LocalLifecycleOwner that collectAsStateWithLifecycle()
+    // reads, so the flow is collected directly.
+    val ui by vm.ui.collectAsState()
     val scope = rememberCoroutineScope()
 
     var tab by remember { mutableStateOf(Destination.HOME) }

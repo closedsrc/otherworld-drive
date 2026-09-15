@@ -52,7 +52,9 @@ dependencies {
     implementation("androidx.room:room-ktx:2.6.1")
     kapt("androidx.room:room-compiler:2.6.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.4")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.3")
+    // lifecycle-runtime-compose is deliberately absent: its lifecycle-aware
+    // collectors read LocalLifecycleOwner from the 2.8 namespace, which the
+    // Compose 1.6.8 that this Kotlin version pins does not provide.
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     // UI: single-activity Compose. No image-loading framework; ThumbLoader
