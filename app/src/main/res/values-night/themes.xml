@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark variants: same hues as the web dashboard's dark block. -->
+    <style name="Theme.DfcMobile" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/accent_dark</item>
+        <item name="colorOnPrimary">@color/accent_ink_dark</item>
+        <item name="colorSurface">@color/surface_dark</item>
+        <item name="colorOnSurface">@color/ink_dark</item>
+        <item name="android:colorBackground">@color/paper_dark</item>
+        <item name="colorSurfaceContainer">@color/card_dark</item>
+        <item name="colorOutline">@color/line_strong_dark</item>
+        <item name="android:statusBarColor">@color/paper_dark</item>
+        <item name="android:navigationBarColor">@color/paper_dark</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="fontFamily">@font/hanken_grotesk</item>
+        <item name="android:fontFamily">@font/hanken_grotesk</item>
+    </style>
+
+    <style name="Text.Dfc.Display" parent="android:Widget.TextView">
+        <item name="android:fontFamily">@font/instrument_serif</item>
+        <item name="fontFamily">@font/instrument_serif</item>
+        <item name="android:textSize">26sp</item>
+        <item name="android:textColor">@color/ink_dark</item>
+    </style>
+
+    <style name="Text.Dfc.Title" parent="android:Widget.TextView">
+        <item name="android:textSize">17sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/ink_dark</item>
+    </style>
+
+    <style name="Text.Dfc.Body" parent="android:Widget.TextView">
+        <item name="android:textSize">14sp</item>
+        <item name="android:textColor">@color/muted_dark</item>
+        <item name="android:lineSpacingMultiplier">1.25</item>
+    </style>
+
+    <style name="Text.Dfc.Mono" parent="android:Widget.TextView">
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:textColor">@color/ink_dark</item>
+    </style>
+
+    <style name="Button.Dfc.Primary" parent="Widget.Material3.Button">
+        <item name="android:textSize">15sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="cornerRadius">10dp</item>
+        <item name="android:paddingStart">20dp</item>
+        <item name="android:paddingEnd">20dp</item>
+    </style>
+
+    <style name="Button.Dfc.Outline" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="android:textSize">14sp</item>
+        <item name="cornerRadius">10dp</item>
+        <item name="strokeColor">@color/line_strong_dark</item>
+        <item name="android:textColor">@color/ink_dark</item>
+    </style>
+
+    <style name="Text.Dfc.Field" parent="Widget.Material3.TextInputLayout.OutlinedBox">
+        <item name="boxCornerRadiusTopStart">10dp</item>
+        <item name="boxCornerRadiusTopEnd">10dp</item>
+        <item name="boxCornerRadiusBottomStart">10dp</item>
+        <item name="boxCornerRadiusBottomEnd">10dp</item>
+        <item name="boxStrokeColor">@color/line_strong_dark</item>
+        <item name="boxBackgroundColor">@color/card_dark</item>
+    </style>
+</resources>

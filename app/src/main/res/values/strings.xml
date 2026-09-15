@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ddrive</string>
+    <string name="setup_title">Connect this phone</string>
+    <string name="setup_hint">Point the app at your ddrive server and paste a write API token. Photos and videos back up automatically every 15 minutes when charging or on Wi-Fi.</string>
+    <string name="server_url">Server URL, e.g. https://drive.example.com</string>
+    <string name="token">Write API token</string>
+    <string name="wifi_only">Back up only on Wi-Fi</string>
+    <string name="connect">Connect and start backup</string>
+    <string name="backup_now">Back up</string>
+    <string name="settings">Server settings</string>
+    <string name="loading">Checking connection…</string>
+    <string name="empty_title">Nothing here yet</string>
+    <string name="empty_gallery">Photos you back up appear here, streamed from your own drive. Tap “Back up” to send the first batch.</string>
+    <string name="preview">Preview</string>
+    <string name="prev">Previous</string>
+    <string name="next">Next</string>
+</resources>
