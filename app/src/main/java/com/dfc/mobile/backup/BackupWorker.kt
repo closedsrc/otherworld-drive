@@ -75,6 +75,8 @@ class BackupWorker(appContext: Context, params: WorkerParameters) :
         var uploaded = 0
         var failed = 0
 
+        UploadTracker.startRun()
+        try {
         for ((index, item) in pending.withIndex()) {
             if (isStopped) break
             try {
@@ -106,11 +108,19 @@ class BackupWorker(appContext: Context, params: WorkerParameters) :
                 if (recovered.isNullOrBlank()) continue
                 db.mediaDao().markUploaded(item.id, recovered, MediaScanner.STATE_UPLOADED, now())
                 prefs.lastBackupAt = System.currentTimeMillis()
+                UploadTracker.recordSkipped(item.displayName, item.size)
                 uploaded++
                 continue
             }
 
             try {
+                UploadTracker.beginUpload(
+                    displayName = item.displayName,
+                    isVideo = item.isVideo,
+                    totalBytes = item.size,
+                    indexInRun = index,
+                    runSize = pending.size,
+                )
                 uploadStream(parentId, remoteName, item)
                 // The upload only returns a job id; resolve the real file record
                 // id (staging may lag a beat, so poll briefly).
@@ -123,16 +133,21 @@ class BackupWorker(appContext: Context, params: WorkerParameters) :
                 if (remoteId.isNullOrBlank()) throw java.io.IOException("file record not found after upload")
                 db.mediaDao().markUploaded(item.id, remoteId, MediaScanner.STATE_UPLOADED, now())
                 prefs.lastBackupAt = System.currentTimeMillis()
+                UploadTracker.finishUpload(ok = true)
                 uploaded++
             } catch (e: Exception) {
                 Log.w(TAG, "upload failed for ${item.displayName}", e)
                 db.mediaDao().markUploaded(item.id, "", MediaScanner.STATE_FAILED, now())
+                UploadTracker.finishUpload(ok = false)
                 failed++
                 // If the server is unreachable, bail out; WorkManager reschedules.
                 if (e is java.io.IOException) {
                     if (failed >= 3) break
                 }
             }
+        }
+        } finally {
+            UploadTracker.endRun()
         }
 
         Log.i(TAG, "run complete: uploaded=$uploaded failed=$failed pendingLeft=${db.mediaDao().pendingCount()}")
@@ -160,7 +175,17 @@ class BackupWorker(appContext: Context, params: WorkerParameters) :
                     // stream fails this one upload instead of crashing the run.
                     val input = resolver.openInputStream(uri)
                         ?: throw java.io.IOException("source gone: ${item.displayName}")
-                    input.use { it.copyTo(sink.outputStream()) }
+                    input.use {
+                        val buffer = ByteArray(64 * 1024)
+                        while (true) {
+                            val read = it.read(buffer)
+                            if (read <= 0) break
+                            sink.write(buffer, 0, read)
+                            // Report from the socket's own writes, so the UI
+                            // speed figure is measured rather than guessed.
+                            UploadTracker.addBytes(read.toLong())
+                        }
+                    }
                 }
             })
             .build()

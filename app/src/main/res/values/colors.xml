@@ -1,31 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Palette lifted from the ddrive web dashboard (frontend/style.css):
-         warm paper surfaces, ink text, terracotta accent. Light is the primary
-         theme; dark mirrors the dashboard's own dark block. -->
-    <color name="paper">#EAE6DF</color>
-    <color name="surface">#F1ECE5</color>
-    <color name="card">#F7F5F0</color>
-    <color name="ink">#1B1914</color>
-    <color name="muted">#615B52</color>
-    <color name="faint">#756E60</color>
-    <color name="line">#DDD7CB</color>
-    <color name="line_strong">#B6AC9C</color>
+    <!-- Launcher icon only. Every in-app colour lives in the Compose theme. -->
     <color name="accent">#A6422A</color>
-    <color name="accent_ink">#FFFFFF</color>
-    <color name="media_mat">#DCD5C8</color>
-    <color name="danger">#B23A2E</color>
-
-    <!-- Dark theme mirrors frontend dark values -->
-    <color name="paper_dark">#16140F</color>
-    <color name="surface_dark">#1C1A14</color>
-    <color name="card_dark">#232019</color>
-    <color name="ink_dark">#ECE6DA</color>
-    <color name="muted_dark">#A79E8E</color>
-    <color name="faint_dark">#7B7464</color>
-    <color name="line_dark">#332E26</color>
-    <color name="line_strong_dark">#544D40</color>
-    <color name="accent_dark">#D86F4C</color>
-    <color name="accent_ink_dark">#1A140F</color>
-    <color name="media_mat_dark">#100E0A</color>
 </resources>

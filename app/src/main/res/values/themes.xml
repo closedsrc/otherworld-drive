@@ -1,71 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Same type pairing as the web dashboard: Instrument Serif for the
-         wordmark/display moments, Hanken Grotesk for all UI text. -->
-    <style name="Theme.DfcMobile" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="colorPrimary">@color/accent</item>
-        <item name="colorOnPrimary">@color/accent_ink</item>
-        <item name="colorSurface">@color/surface</item>
-        <item name="colorOnSurface">@color/ink</item>
-        <item name="android:colorBackground">@color/paper</item>
-        <item name="colorSurfaceContainer">@color/card</item>
-        <item name="colorOutline">@color/line_strong</item>
-        <item name="android:statusBarColor">@color/paper</item>
-        <item name="android:navigationBarColor">@color/paper</item>
+    <!-- Compose owns every colour in the running app. This only covers the
+         window before the first frame, so the launch flash matches the theme
+         the device is actually in rather than a hardcoded one. -->
+    <style name="Theme.DfcMobile" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">#FFFFFF</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">true</item>
-        <item name="fontFamily">@font/hanken_grotesk</item>
-        <item name="android:fontFamily">@font/hanken_grotesk</item>
-    </style>
-
-    <!-- Serif display, used only for the wordmark and screen titles. -->
-    <style name="Text.Dfc.Display" parent="android:Widget.TextView">
-        <item name="android:fontFamily">@font/instrument_serif</item>
-        <item name="fontFamily">@font/instrument_serif</item>
-        <item name="android:textSize">26sp</item>
-        <item name="android:textColor">@color/ink</item>
-    </style>
-
-    <style name="Text.Dfc.Title" parent="android:Widget.TextView">
-        <item name="android:textSize">17sp</item>
-        <item name="android:textStyle">bold</item>
-        <item name="android:textColor">@color/ink</item>
-    </style>
-
-    <style name="Text.Dfc.Body" parent="android:Widget.TextView">
-        <item name="android:textSize">14sp</item>
-        <item name="android:textColor">@color/muted</item>
-        <item name="android:lineSpacingMultiplier">1.25</item>
-    </style>
-
-    <style name="Text.Dfc.Mono" parent="android:Widget.TextView">
-        <item name="android:fontFamily">monospace</item>
-        <item name="android:textSize">13sp</item>
-        <item name="android:textColor">@color/ink</item>
-    </style>
-
-    <!-- Primary action: solid terracotta, 10dp radius like the web buttons. -->
-    <style name="Button.Dfc.Primary" parent="Widget.Material3.Button">
-        <item name="android:textSize">15sp</item>
-        <item name="android:textStyle">bold</item>
-        <item name="cornerRadius">10dp</item>
-        <item name="android:paddingStart">20dp</item>
-        <item name="android:paddingEnd">20dp</item>
-    </style>
-
-    <style name="Button.Dfc.Outline" parent="Widget.Material3.Button.OutlinedButton">
-        <item name="android:textSize">14sp</item>
-        <item name="cornerRadius">10dp</item>
-        <item name="strokeColor">@color/line_strong</item>
-        <item name="android:textColor">@color/ink</item>
-    </style>
-
-    <!-- Rounded text fields on card background, web-style inputs. -->
-    <style name="Text.Dfc.Field" parent="Widget.Material3.TextInputLayout.OutlinedBox">
-        <item name="boxCornerRadiusTopStart">10dp</item>
-        <item name="boxCornerRadiusTopEnd">10dp</item>
-        <item name="boxCornerRadiusBottomStart">10dp</item>
-        <item name="boxCornerRadiusBottomEnd">10dp</item>
-        <item name="boxStrokeColor">@color/line_strong</item>
-        <item name="boxBackgroundColor">@color/card</item>
+        <item name="android:windowLightNavigationBar">true</item>
     </style>
 </resources>

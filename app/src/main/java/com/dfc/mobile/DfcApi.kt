@@ -179,6 +179,104 @@ class DfcApi(private val prefs: Prefs) {
 
     fun authHeaders(): Map<String, String> = mapOf("X-API-Token" to prefs.token)
 
+    /**
+     * Server totals for the storage card. All of these are measured by the
+     * server: bytes it is actually holding, the file rows it has, and the free
+     * space on its own disk. There is no quota on a node-backed drive, so the
+     * UI must not invent one.
+     */
+    data class Stats(
+        val filesCount: Int,
+        val totalBytes: Long,
+        val diskFreeBytes: Long,
+        val primaryBackend: String,
+        val cloudReady: Boolean,
+        val activeJobs: Int,
+    )
+
+    fun stats(): Stats {
+        val json = status()
+        return Stats(
+            filesCount = json.optInt("files_count"),
+            totalBytes = json.optLong("total_storage_bytes"),
+            diskFreeBytes = json.optLong("disk_free_bytes"),
+            primaryBackend = json.optString("primary_backend", "discord"),
+            cloudReady = json.optBoolean("cloud_ready"),
+            activeJobs = json.optInt("active_jobs_count"),
+        )
+    }
+
+    // ---- mutations ---------------------------------------------------------
+
+    /**
+     * Soft delete to the server's trash. The route takes a list; a single id
+     * still goes through as a one-element list so both paths behave the same.
+     */
+    fun deleteFiles(fileIds: List<String>): Pair<Int, Int> {
+        if (fileIds.isEmpty()) return 0 to 0
+        val payload = JSONObject().put("file_ids", JSONArray(fileIds))
+        val body = payload.toString().toRequestBody("application/json".toMediaType())
+        val resp = client.newCall(req("${base()}/api/delete").post(body).build()).execute()
+        resp.use {
+            val json = bodyJson(it)
+            return json.optInt("deleted") to json.optInt("failed")
+        }
+    }
+
+    // ---- public links (shares) --------------------------------------------
+
+    data class Share(
+        val id: String,
+        val fileId: String,
+        val fileName: String,
+        val createdAt: Long,
+        val expiresAt: Long,
+        val downloads: Long,
+        val expired: Boolean,
+    )
+
+    /**
+     * Create a public link for one file. The server returns the token exactly
+     * once; it is never recoverable afterwards, so callers must show the URL
+     * immediately or it is lost.
+     */
+    fun createShare(fileId: String, ttlDays: Int = 7): String {
+        val payload = JSONObject()
+            .put("file_id", fileId)
+            .put("expires_in_seconds", ttlDays * 24 * 3600)
+        val body = payload.toString().toRequestBody("application/json".toMediaType())
+        val resp = client.newCall(req("${base()}/api/shares/create").post(body).build()).execute()
+        resp.use { return bodyJson(it).getString("url") }
+    }
+
+    /** Every active link, newest first, with its file name and download count. */
+    fun listShares(): List<Share> {
+        val resp = client.newCall(req("${base()}/api/shares/list_all").get().build()).execute()
+        resp.use {
+            val json = bodyJson(it)
+            val arr = json.optJSONArray("shares") ?: JSONArray()
+            return (0 until arr.length()).map { i ->
+                val o = arr.getJSONObject(i)
+                Share(
+                    id = o.getString("id"),
+                    fileId = o.optString("file_id"),
+                    fileName = o.optString("file_name"),
+                    createdAt = o.optLong("created_at"),
+                    expiresAt = o.optLong("expires_at"),
+                    downloads = o.optLong("downloads"),
+                    expired = o.optBoolean("expired"),
+                )
+            }
+        }
+    }
+
+    fun revokeShare(shareId: String) {
+        val payload = JSONObject().put("id", shareId)
+        val body = payload.toString().toRequestBody("application/json".toMediaType())
+        val resp = client.newCall(req("${base()}/api/shares/revoke").post(body).build()).execute()
+        resp.use { bodyJson(it) }
+    }
+
     fun fetchBytes(url: String): ByteArray {
         val resp = client.newCall(req(url).get().build()).execute()
         resp.use {
