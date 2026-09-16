@@ -10,3 +10,4 @@ shots/
 testdata/
 emulator-run.log
 *.apk
+gradle/wrapper/*.zip
