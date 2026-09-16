@@ -58,7 +58,7 @@ fun SetupScreen(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val existing = remember { Prefs.get(context) }
-    var token by remember { mutableStateOf(existing.token) }
+    var token by remember { mutableStateOf(existing.storedToken) }
     var wifiOnly by remember { mutableStateOf(existing.wifiOnly) }
     var showToken by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }

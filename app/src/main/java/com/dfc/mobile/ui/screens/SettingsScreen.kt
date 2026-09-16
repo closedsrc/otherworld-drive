@@ -38,6 +38,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.dfc.mobile.Prefs
 import com.dfc.mobile.ui.DfcViewModel
 import com.dfc.mobile.ui.ScreenTitle
 import com.dfc.mobile.ui.components.PrimaryButton
@@ -51,6 +52,7 @@ import com.dfc.mobile.ui.theme.Spacing
 @Composable
 fun SettingsScreen(
     ui: DfcViewModel.Ui,
+    tokenIsBuiltIn: Boolean,
     wifiOnly: Boolean,
     onToggleWifiOnly: (Boolean) -> Unit,
     onOpenServerSetup: () -> Unit,
@@ -69,8 +71,11 @@ fun SettingsScreen(
             SettingRow(
                 icon = Icons.Outlined.Description,
                 title = "Write token",
-                subtitle = if (ui.configured) "Set. Tap to replace it."
-                else "Not set. Tap to paste your token.",
+                subtitle = when {
+                    tokenIsBuiltIn -> "Built into this build. Nothing to set up."
+                    ui.configured -> "Set. Tap to replace it."
+                    else -> "Not set. Tap to paste your token."
+                },
                 onClick = onOpenServerSetup,
             )
             SettingRow(

@@ -16,9 +16,26 @@ class Prefs private constructor(context: Context?) {
         context?.getSharedPreferences("dfc_mobile", Context.MODE_PRIVATE)
             ?: InMemoryPrefs()
 
+    /**
+     * The write token. A build with one baked in (see build.gradle.kts) is
+     * configured before the app is ever opened, so a stored value is only
+     * consulted first to allow overriding it from Settings.
+     */
     var token: String
-        get() = sp.getString(KEY_TOKEN, "")!!
+        get() = sp.getString(KEY_TOKEN, "")!!.ifEmpty { BuildConfig.WRITE_TOKEN }
         set(v) = sp.edit().putString(KEY_TOKEN, v).apply()
+
+    /** True when the running build carries its own token and none was typed. */
+    val tokenIsBuiltIn: Boolean
+        get() = sp.getString(KEY_TOKEN, "")!!.isEmpty() && BuildConfig.WRITE_TOKEN.isNotEmpty()
+
+    /**
+     * Only what was typed on this device, never the built-in fallback — so the
+     * Setup field starts empty on a baked build instead of echoing the baked
+     * token back where "Show" could reveal it.
+     */
+    val storedToken: String
+        get() = sp.getString(KEY_TOKEN, "")!!
 
     var wifiOnly: Boolean
         get() = sp.getBoolean(KEY_WIFI_ONLY, true)

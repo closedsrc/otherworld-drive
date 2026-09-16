@@ -144,6 +144,13 @@ private fun DfcRoot() {
         if (!ui.configured && overlay == Overlay.None) overlay = Overlay.Setup
     }
 
+    // A build with the token baked in never passes through Setup, which is the
+    // only other place the periodic job is armed — so arm it here. The enqueue
+    // is an UPDATE on a unique name, so repeat launches are a no-op.
+    LaunchedEffect(ui.configured) {
+        if (ui.configured) BackupWorker.schedule(context, ui.wifiOnly)
+    }
+
     // The Files tab fetches its root listing the first time it is opened.
     LaunchedEffect(tab) {
         if (tab == Destination.FILES) vm.loadRootIfNeeded()
@@ -271,6 +278,7 @@ private fun DfcRoot() {
 
                 Destination.SETTINGS -> SettingsScreen(
                     ui = ui,
+                    tokenIsBuiltIn = Prefs.get(context).tokenIsBuiltIn,
                     wifiOnly = ui.wifiOnly,
                     onToggleWifiOnly = { value ->
                         Prefs.get(context).wifiOnly = value

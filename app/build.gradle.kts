@@ -1,7 +1,24 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.kapt")
+}
+
+/**
+ * The drive's write token is injected at build time from local.properties
+ * (which is gitignored), so a build from this machine is configured on first
+ * launch while the credential itself never enters version control. A fresh
+ * clone simply builds an app that asks for the token instead.
+ */
+val bakedWriteToken: String = run {
+    val f = rootProject.file("local.properties")
+    if (!f.exists()) "" else {
+        val p = Properties()
+        f.inputStream().use { p.load(it) }
+        p.getProperty("dfc.writeToken", "").trim()
+    }
 }
 
 android {
@@ -14,6 +31,8 @@ android {
         targetSdk = 34
         versionCode = 3
         versionName = "3.0"
+
+        buildConfigField("String", "WRITE_TOKEN", "\"$bakedWriteToken\"")
     }
 
     buildTypes {
@@ -34,6 +53,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.14"
