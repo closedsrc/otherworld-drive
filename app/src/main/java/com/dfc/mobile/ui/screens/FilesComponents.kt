@@ -6,7 +6,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -50,11 +49,9 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.dfc.mobile.DfcApi
 import com.dfc.mobile.RemoteFile
 import com.dfc.mobile.ui.formatBytes
 import com.dfc.mobile.ui.relativeTime
-import com.dfc.mobile.ui.DfcViewModel
 import com.dfc.mobile.ui.DfcViewModel.Kind
 import com.dfc.mobile.ui.components.MetaLine
 import com.dfc.mobile.ui.components.NoFilesYet

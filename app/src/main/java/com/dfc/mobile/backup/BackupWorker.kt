@@ -211,7 +211,7 @@ class BackupWorker(appContext: Context, params: WorkerParameters) :
             .build()
     }
 
-    private fun apiBaseUrl(): String = Prefs.get(applicationContext).serverUrl
+    private fun apiBaseUrl(): String = com.dfc.mobile.Server.BASE_URL
     private fun apiToken(): String = Prefs.get(applicationContext).token
 
     private fun now(): Long = System.currentTimeMillis() / 1000

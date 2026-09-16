@@ -19,9 +19,9 @@ import androidx.compose.ui.unit.dp
 
 /**
  * The home screen's focal point. The arc carries live transfer progress and sits
- * as an empty track the rest of the time: the drive is backed by Telegram and has
- * no quota, so there is no capacity ratio worth drawing. The centre figure is the
- * stored total, which is a real sum the server reports.
+ * as an empty track the rest of the time: the drive has no quota, so there is
+ * no capacity ratio worth drawing. The centre figure is the stored total,
+ * which is a real sum the server reports.
  */
 @Composable
 fun StorageRing(

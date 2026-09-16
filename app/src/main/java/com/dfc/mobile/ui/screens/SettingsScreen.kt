@@ -41,8 +41,6 @@ import androidx.compose.ui.unit.dp
 import com.dfc.mobile.ui.DfcViewModel
 import com.dfc.mobile.ui.ScreenTitle
 import com.dfc.mobile.ui.components.PrimaryButton
-import com.dfc.mobile.ui.components.SectionHeader
-import com.dfc.mobile.ui.theme.Radii
 import com.dfc.mobile.ui.theme.Spacing
 
 /**
@@ -53,7 +51,6 @@ import com.dfc.mobile.ui.theme.Spacing
 @Composable
 fun SettingsScreen(
     ui: DfcViewModel.Ui,
-    serverUrl: String,
     wifiOnly: Boolean,
     onToggleWifiOnly: (Boolean) -> Unit,
     onOpenServerSetup: () -> Unit,
@@ -70,13 +67,14 @@ fun SettingsScreen(
         item(key = "account") {
             GroupHeader("Account")
             SettingRow(
-                icon = Icons.Outlined.PhotoLibrary,
-                title = "Server",
-                subtitle = if (serverUrl.isBlank()) "Not set" else serverUrl,
+                icon = Icons.Outlined.Description,
+                title = "Write token",
+                subtitle = if (ui.configured) "Set. Tap to replace it."
+                else "Not set. Tap to paste your token.",
                 onClick = onOpenServerSetup,
             )
             SettingRow(
-                icon = Icons.Outlined.Description,
+                icon = Icons.Outlined.PhotoLibrary,
                 title = "Photos on this phone",
                 subtitle = "${ui.backedUp} backed up, ${ui.pending} waiting",
                 onClick = onOpenUploads,
@@ -97,13 +95,13 @@ fun SettingsScreen(
                     SettingRow(
                         icon = Icons.Outlined.PhotoLibrary,
                         title = formatBytes(s.totalBytes) + " stored",
-                        subtitle = "${s.filesCount} files, backed by ${s.primaryBackend}",
+                        subtitle = "${s.filesCount} files on device",
                         onClick = {},
                     )
                     SettingRow(
                         icon = Icons.Outlined.AllInclusive,
                         title = "Unlimited storage",
-                        subtitle = s.primaryBackend,
+                        subtitle = "Private infrastructure",
                         onClick = {},
                     )
                 }
@@ -164,7 +162,7 @@ fun SettingsScreen(
             )
             Box(Modifier.padding(horizontal = Spacing.md, vertical = Spacing.md)) {
                 Text(
-                    text = "Otherworld Drive 2.0  ·  Com${"p"}anion app for a self-hosted drive",
+                    text = "Otherworld Drive 3.0  ·  Companion app for a self-hosted drive",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

@@ -18,7 +18,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Schedule
@@ -34,7 +33,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.dfc.mobile.DfcApi
 import com.dfc.mobile.backup.UploadTracker
 import com.dfc.mobile.ui.formatBytes
 import com.dfc.mobile.ui.formatDuration
@@ -42,6 +40,7 @@ import com.dfc.mobile.ui.relativeTime
 import com.dfc.mobile.ui.DfcViewModel
 import com.dfc.mobile.ui.DfcViewModel.Kind
 import com.dfc.mobile.ui.ScreenTitle
+import com.dfc.mobile.ui.components.GhostButton
 import com.dfc.mobile.ui.components.NoUploadsForFile
 import com.dfc.mobile.ui.components.NoUploadsYet
 import com.dfc.mobile.ui.components.PrimaryButton
@@ -59,7 +58,7 @@ import com.dfc.mobile.ui.theme.Spacing
 fun UploadsScreen(
     ui: DfcViewModel.Ui,
     onBackupNow: () -> Unit,
-    onOpenFiles: () -> Unit,
+    onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val current by UploadTracker.current.collectAsState()
@@ -133,7 +132,7 @@ fun UploadsScreen(
         if (current == null && completed.isEmpty() && ui.pending == 0) {
             item(key = "empty") {
                 Spacer(Modifier.height(Spacing.xl))
-                if (ui.configured) NoUploadsYet() else NotConnectedForUploads(onOpenFiles)
+                if (ui.configured) NoUploadsYet() else NotConnectedForUploads(onOpenSettings)
             }
         }
     }
@@ -310,6 +309,15 @@ private fun DoneRow(done: UploadTracker.Done) {
 }
 
 @Composable
-private fun NotConnectedForUploads(onOpenFiles: () -> Unit) {
-    NoUploadsForFile()
+private fun NotConnectedForUploads(onOpenSettings: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = Spacing.md),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        NoUploadsForFile()
+        Spacer(Modifier.height(Spacing.md))
+        GhostButton(text = "Open settings", onClick = onOpenSettings)
+    }
 }

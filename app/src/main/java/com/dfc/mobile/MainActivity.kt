@@ -44,7 +44,6 @@ import com.dfc.mobile.ui.Destination
 import com.dfc.mobile.ui.DfcBottomBar
 import com.dfc.mobile.ui.DfcViewModel
 import com.dfc.mobile.ui.theme.DfcTheme
-import com.dfc.mobile.ui.screens.DeleteDialog
 import com.dfc.mobile.ui.screens.FilesLayout
 import com.dfc.mobile.ui.screens.FilesScreen
 import com.dfc.mobile.ui.screens.GalleryPreview
@@ -252,7 +251,7 @@ private fun DfcRoot() {
                 Destination.UPLOADS -> UploadsScreen(
                     ui = ui,
                     onBackupNow = { vm.backupNow() },
-                    onOpenFiles = { tab = Destination.FILES },
+                    onOpenSettings = { overlay = Overlay.Setup },
                     modifier = screenInsets,
                 )
 
@@ -272,7 +271,6 @@ private fun DfcRoot() {
 
                 Destination.SETTINGS -> SettingsScreen(
                     ui = ui,
-                    serverUrl = Prefs.get(context).serverUrl,
                     wifiOnly = ui.wifiOnly,
                     onToggleWifiOnly = { value ->
                         Prefs.get(context).wifiOnly = value

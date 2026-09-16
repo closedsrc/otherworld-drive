@@ -8,3 +8,5 @@ captures/
 .cxx/
 shots/
 testdata/
+emulator-run.log
+*.apk

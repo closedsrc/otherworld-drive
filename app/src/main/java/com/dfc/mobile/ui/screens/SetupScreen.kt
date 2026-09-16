@@ -31,12 +31,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.dfc.mobile.DfcApi
 import com.dfc.mobile.Prefs
+import com.dfc.mobile.Server
 import com.dfc.mobile.backup.BackupWorker
 import com.dfc.mobile.ui.components.PrimaryButton
 import com.dfc.mobile.ui.theme.Radii
@@ -46,9 +46,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Connection setup as a Compose screen. Credentials are verified against the
- * server before they are saved, so a typo cannot leave the app in a configured
- * state that never works.
+ * Token entry. The server is compiled in ([Server.BASE_URL]), so the only thing
+ * to supply here is the write token — which is verified against the drive
+ * before it is saved, so a typo cannot leave the app half-configured.
  */
 @Composable
 fun SetupScreen(
@@ -58,7 +58,6 @@ fun SetupScreen(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val existing = remember { Prefs.get(context) }
-    var url by remember { mutableStateOf(existing.serverUrl) }
     var token by remember { mutableStateOf(existing.token) }
     var wifiOnly by remember { mutableStateOf(existing.wifiOnly) }
     var showToken by remember { mutableStateOf(false) }
@@ -66,8 +65,7 @@ fun SetupScreen(
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
-    val urlLooksValid = url.trim().startsWith("http://") || url.trim().startsWith("https://")
-    val canSubmit = urlLooksValid && token.isNotBlank() && !busy
+    val canSubmit = token.isNotBlank() && !busy
 
     Column(
         modifier = modifier
@@ -84,38 +82,21 @@ fun SetupScreen(
         )
         Spacer(Modifier.height(Spacing.sm))
         Text(
-            text = "Point the app at your drive and paste a write token. Photos and " +
-                "videos then back up on their own every 15 minutes.",
+            text = "Paste the write token for your drive. Photos and videos then " +
+                "back up on their own every 15 minutes.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
-        Spacer(Modifier.height(Spacing.xl))
-
-        OutlinedTextField(
-            value = url,
-            onValueChange = { url = it },
-            singleLine = true,
-            label = { Text("Server address") },
-            placeholder = { Text("https://drive.example.com") },
-            isError = url.isNotBlank() && !urlLooksValid,
-            keyboardOptions = KeyboardOptions(
-                keyboardType = KeyboardType.Uri,
-                imeAction = ImeAction.Next,
-            ),
-            shape = RoundedCornerShape(Radii.control),
-            modifier = Modifier.fillMaxWidth(),
-        )
-        if (url.isNotBlank() && !urlLooksValid) {
-            Spacer(Modifier.height(Spacing.xs))
-            Text(
-                text = "The address has to start with http:// or https://",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.error,
-            )
-        }
-
         Spacer(Modifier.height(Spacing.md))
+
+        Text(
+            text = Server.BASE_URL,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        Spacer(Modifier.height(Spacing.xl))
 
         OutlinedTextField(
             value = token,
@@ -169,16 +150,15 @@ fun SetupScreen(
                     busy = true
                     error = null
                     scope.launch {
-                        val candidate = Prefs.probe(url.trim(), token.trim())
+                        val candidate = Prefs.probe(token.trim())
                         val result = withContext(Dispatchers.IO) {
                             runCatching { DfcApi(candidate).verify() }
                         }
                         busy = false
                         val ok = result.getOrNull()?.first == true
                         if (ok) {
-                            // Only now are the credentials persisted: a failed
-                            // probe must not leave the app half-configured.
-                            existing.serverUrl = url.trim()
+                            // Only now is the token persisted: a failed probe
+                            // must not leave the app half-configured.
                             existing.token = token.trim()
                             existing.wifiOnly = wifiOnly
                             DfcApi.get(context).invalidateCache()
@@ -188,7 +168,7 @@ fun SetupScreen(
                         } else {
                             error = result.getOrNull()?.second
                                 ?: result.exceptionOrNull()?.message
-                                ?: "Could not reach that server"
+                                ?: "Could not reach the drive"
                         }
                     }
                 },

@@ -4,18 +4,17 @@ import android.content.Context
 import android.content.SharedPreferences
 
 /**
- * Server connection settings plus the last backup bookkeeping the UI shows.
- * A Prefs backed by an in-memory map (probe()) carries candidate credentials
+ * Local settings plus the last backup bookkeeping the UI shows. The server
+ * address is not here: it is compiled in ([Server.BASE_URL]), so the only
+ * thing this stores is the write token and the device's own preferences.
+ *
+ * A Prefs backed by an in-memory map (probe()) carries a candidate token
  * during Setup's verify-before-save without touching real storage.
  */
 class Prefs private constructor(context: Context?) {
     private val sp: SharedPreferences =
         context?.getSharedPreferences("dfc_mobile", Context.MODE_PRIVATE)
             ?: InMemoryPrefs()
-
-    var serverUrl: String
-        get() = sp.getString(KEY_SERVER, "")!!.trimEnd('/')
-        set(v) = sp.edit().putString(KEY_SERVER, v.trimEnd('/')).apply()
 
     var token: String
         get() = sp.getString(KEY_TOKEN, "")!!
@@ -34,7 +33,7 @@ class Prefs private constructor(context: Context?) {
         set(v) = sp.edit().putLong(KEY_LAST_BACKUP, v).apply()
 
     val isConfigured: Boolean
-        get() = serverUrl.startsWith("http") && token.isNotEmpty()
+        get() = token.isNotEmpty()
 
     /** SharedPreferences backed by a mutable map; lives and dies with the probe. */
     private class InMemoryPrefs : SharedPreferences {
@@ -75,7 +74,6 @@ class Prefs private constructor(context: Context?) {
     }
 
     companion object {
-        private const val KEY_SERVER = "server_url"
         private const val KEY_TOKEN = "token"
         private const val KEY_WIFI_ONLY = "wifi_only"
         private const val KEY_LAST_BACKUP = "last_backup_at"
@@ -90,11 +88,10 @@ class Prefs private constructor(context: Context?) {
 
         /**
          * Ephemeral prefs for the Setup screen's verify-before-save probe —
-         * carries the candidate credentials without touching real storage.
+         * carries the candidate token without touching real storage.
          */
-        fun probe(serverUrl: String, token: String): Prefs {
+        fun probe(token: String): Prefs {
             val p = Prefs(null)
-            p.serverUrl = serverUrl
             p.token = token
             return p
         }

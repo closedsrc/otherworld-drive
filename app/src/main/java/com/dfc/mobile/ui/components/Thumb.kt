@@ -38,9 +38,18 @@ fun Thumb(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
-    var bitmap by remember(fileId) { mutableStateOf<Bitmap?>(ThumbLoader.cached(fileId)) }
+    var bitmap by remember(fileId) {
+        mutableStateOf(if (fileId.isBlank()) null else ThumbLoader.cached(fileId))
+    }
 
     LaunchedEffect(fileId) {
+        // A blank id means there is no server record yet (e.g. the file
+        // currently uploading): stay on the glyph instead of requesting
+        // /api/thumb?file_id=, which the server can only reject.
+        if (fileId.isBlank()) {
+            bitmap = null
+            return@LaunchedEffect
+        }
         if (bitmap == null) {
             bitmap = withContext(Dispatchers.IO) { ThumbLoader.load(context, fileId) }
         }

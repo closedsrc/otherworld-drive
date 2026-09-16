@@ -92,8 +92,7 @@ fun HomeScreen(
                 ScreenTitle(
                     title = greeting(),
                     subtitle = if (ui.configured) {
-                        val backend = storage?.primaryBackend ?: "the server"
-                        "Backed by $backend"
+                        "Private infrastructure"
                     } else {
                         "Not connected yet"
                     },
@@ -175,8 +174,8 @@ fun HomeScreen(
 
 /**
  * The storage figure plus the live state of the drive. The centre figure is the
- * sum of what the drive holds; the third stat names the storage model instead of
- * the host disk, because the drive is backed by Telegram and has no quota.
+ * sum of what the drive holds; the third stat names the storage model instead
+ * of the host disk, because the drive has no quota.
  */
 @Composable
 private fun StorageCard(
@@ -199,7 +198,6 @@ private fun StorageCard(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         val totalBytes = storage?.totalBytes ?: 0L
-        val backend = storage?.primaryBackend ?: "the server"
 
         StorageRing(
             progress = job?.fraction,
@@ -227,7 +225,7 @@ private fun StorageCard(
             StatDivider()
             Stat(
                 value = "Unlimited",
-                label = backend,
+                label = "Private infrastructure",
                 modifier = Modifier.weight(1f),
             )
         }

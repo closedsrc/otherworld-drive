@@ -45,7 +45,8 @@ class DfcApi(private val prefs: Prefs) {
     /** Cache of "Mobile Backup/2026-09-14" → folder id, per worker run. */
     private val folderCache = HashMap<String, String>()
 
-    private fun base(): String = prefs.serverUrl
+    // The host is compiled in; only the token comes from prefs.
+    private fun base(): String = Server.BASE_URL
 
     private fun req(url: String): Request.Builder =
         Request.Builder().url(url).header("X-API-Token", prefs.token)
