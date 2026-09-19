@@ -12,16 +12,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 
 /**
- * The home screen's focal point. The arc carries live transfer progress and sits
- * as an empty track the rest of the time: the drive has no quota, so there is
- * no capacity ratio worth drawing. The centre figure is the stored total,
- * which is a real sum the server reports.
+ * Storage total with an optional progress arc. The arc carries live transfer
+ * progress and sits as an empty track the rest of the time, including wherever no
+ * transfer is in view: the drive has no quota, so there is no capacity ratio
+ * worth drawing. The centre figure is the stored total, which is a real sum the
+ * server reports.
  */
 @Composable
 fun StorageRing(
@@ -44,11 +47,18 @@ fun StorageRing(
     Box(modifier = modifier.size(diameter), contentAlignment = Alignment.Center) {
         Canvas(Modifier.size(diameter)) {
             val stroke = size.minDimension * 0.075f
+            // Inset by half the stroke: an arc is drawn on its bounding box, so
+            // without this the outer half of the line falls outside the canvas
+            // and gets clipped, reading as a thinner, lopsided ring.
+            val inset = stroke / 2f
+            val arcSize = Size(size.width - stroke, size.height - stroke)
             drawArc(
                 color = track,
                 startAngle = -90f,
                 sweepAngle = 360f,
                 useCenter = false,
+                topLeft = Offset(inset, inset),
+                size = arcSize,
                 style = Stroke(width = stroke, cap = StrokeCap.Round),
             )
             if (sweep > 0.001f) {
@@ -57,6 +67,8 @@ fun StorageRing(
                     startAngle = -90f,
                     sweepAngle = 360f * sweep,
                     useCenter = false,
+                    topLeft = Offset(inset, inset),
+                    size = arcSize,
                     style = Stroke(width = stroke, cap = StrokeCap.Round),
                 )
             }

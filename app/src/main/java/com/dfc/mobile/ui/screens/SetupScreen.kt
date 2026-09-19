@@ -1,5 +1,6 @@
 package com.dfc.mobile.ui.screens
 
+import android.os.Build
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -31,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
@@ -44,11 +47,17 @@ import com.dfc.mobile.ui.theme.Spacing
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.dfc.mobile.ui.theme.currentType
 
 /**
- * Token entry. The server is compiled in ([Server.BASE_URL]), so the only thing
- * to supply here is the write token — which is verified against the drive
- * before it is saved, so a typo cannot leave the app half-configured.
+ * Connect this phone to a drive.
+ *
+ * The primary path registers this install as a device: the drive password is
+ * exchanged once for a token that authorizes only this phone, and the server
+ * keeps just its hash. The token can be revoked from the drive's device list
+ * without touching any other phone — there is no shared secret in the app.
+ * The token field below exists for the headless case (a token minted with
+ * create-token on the server); it is the advanced path, not the default.
  */
 @Composable
 fun SetupScreen(
@@ -58,67 +67,111 @@ fun SetupScreen(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val existing = remember { Prefs.get(context) }
-    var token by remember { mutableStateOf(existing.storedToken) }
+    var serverUrl by remember { mutableStateOf(existing.serverUrl.ifEmpty { Server.DEFAULT_BASE_URL }) }
+    var password by remember { mutableStateOf("") }
+    var tokenMode by remember { mutableStateOf(false) }
+    var token by remember { mutableStateOf("") }
     var wifiOnly by remember { mutableStateOf(existing.wifiOnly) }
-    var showToken by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
-    val canSubmit = token.isNotBlank() && !busy
+    val canSubmit = if (tokenMode) {
+        token.isNotBlank() && !busy
+    } else {
+        password.isNotBlank() && serverUrl.isNotBlank() && !busy
+    }
+
+    fun finishWithToken(verified: Boolean, message: String?) {
+        busy = false
+        if (verified) {
+            existing.serverUrl = serverUrl.trim()
+            existing.wifiOnly = wifiOnly
+            DfcApi.get(context).invalidateCache()
+            BackupWorker.schedule(context, wifiOnly)
+            BackupWorker.runNow(context)
+            onConnected()
+        } else {
+            error = message ?: "Could not reach the drive"
+        }
+    }
 
     Column(
         modifier = modifier
             .fillMaxSize()
             .statusBarsPadding()
             .imePadding()
+            // Setup is a full-screen overlay with no bottom bar, so it has to
+            // clear the navigation bar itself or the Connect button sits under it
+            // on a three-button-navigation device.
+            .navigationBarsPadding()
             .verticalScroll(rememberScrollState())
             .padding(Spacing.lg),
     ) {
         Text(
             text = "Connect this phone",
-            style = MaterialTheme.typography.headlineSmall,
+            style = currentType.title,
             color = MaterialTheme.colorScheme.onSurface,
         )
         Spacer(Modifier.height(Spacing.sm))
         Text(
-            text = "Paste the write token for your drive. Photos and videos then " +
-                "back up on their own every 15 minutes.",
-            style = MaterialTheme.typography.bodyMedium,
+            text = "Sign in once with your drive password. This phone gets its own " +
+                "access key — photos and videos then back up on their own, and the " +
+                "key can be revoked any time without touching your other devices.",
+            style = currentType.bodyMuted,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
         Spacer(Modifier.height(Spacing.md))
 
-        Text(
-            text = Server.BASE_URL,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-
-        Spacer(Modifier.height(Spacing.xl))
-
         OutlinedTextField(
-            value = token,
-            onValueChange = { token = it },
+            value = serverUrl,
+            onValueChange = { serverUrl = it },
             singleLine = true,
-            label = { Text("Write token") },
-            visualTransformation = if (showToken) VisualTransformation.None
-            else PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            label = { Text("Drive address") },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
             shape = RoundedCornerShape(Radii.control),
-            trailingIcon = {
-                TextButton(onClick = { showToken = !showToken }) {
-                    Text(
-                        text = if (showToken) "Hide" else "Show",
-                        style = MaterialTheme.typography.labelMedium,
-                    )
-                }
-            },
             modifier = Modifier.fillMaxWidth(),
         )
 
         Spacer(Modifier.height(Spacing.md))
+
+        if (tokenMode) {
+            OutlinedTextField(
+                value = token,
+                onValueChange = { token = it },
+                singleLine = true,
+                label = { Text("Device token") },
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                shape = RoundedCornerShape(Radii.control),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        } else {
+            OutlinedTextField(
+                value = password,
+                onValueChange = { password = it },
+                singleLine = true,
+                label = { Text("Drive password") },
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(
+                    imeAction = ImeAction.Done,
+                    keyboardType = KeyboardType.Password,
+                ),
+                shape = RoundedCornerShape(Radii.control),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+
+        TextButton(onClick = { tokenMode = !tokenMode; error = null }) {
+            Text(
+                text = if (tokenMode) "Sign in with the password instead"
+                else "Paste a device token instead",
+                style = currentType.meta,
+            )
+        }
+
+        Spacer(Modifier.height(Spacing.xs))
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -128,12 +181,12 @@ fun SetupScreen(
             Column(Modifier.weight(1f)) {
                 Text(
                     text = "Wi-Fi only",
-                    style = MaterialTheme.typography.bodyLarge,
+                    style = currentType.body,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
                     text = "Keep uploads off mobile data",
-                    style = MaterialTheme.typography.labelSmall,
+                    style = currentType.meta,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -144,31 +197,40 @@ fun SetupScreen(
 
         Row(verticalAlignment = Alignment.CenterVertically) {
             PrimaryButton(
-                text = if (busy) "Checking" else "Connect",
+                text = if (busy) "Connecting" else "Connect",
                 onClick = {
                     if (!canSubmit) return@PrimaryButton
                     busy = true
                     error = null
                     scope.launch {
-                        val candidate = Prefs.probe(token.trim())
-                        val result = withContext(Dispatchers.IO) {
-                            runCatching { DfcApi(candidate).verify() }
-                        }
-                        busy = false
-                        val ok = result.getOrNull()?.first == true
-                        if (ok) {
-                            // Only now is the token persisted: a failed probe
-                            // must not leave the app half-configured.
-                            existing.token = token.trim()
-                            existing.wifiOnly = wifiOnly
-                            DfcApi.get(context).invalidateCache()
-                            BackupWorker.schedule(context, wifiOnly)
-                            BackupWorker.runNow(context)
-                            onConnected()
+                        if (tokenMode) {
+                            // Verify a hand-minted token before it is saved, so a
+                            // typo cannot leave the app half-configured.
+                            val candidate = Prefs.probe(token.trim())
+                            val (ok, msg) = withContext(Dispatchers.IO) {
+                                runCatching { DfcApi(candidate).verify() }
+                            }.getOrElse { false to (it.message ?: "connection failed") }
+                            if (ok) existing.token = token.trim()
+                            finishWithToken(ok, msg)
                         } else {
-                            error = result.getOrNull()?.second
-                                ?: result.exceptionOrNull()?.message
-                                ?: "Could not reach the drive"
+                            val deviceName = Build.MODEL?.takeIf { it.isNotBlank() } ?: "Android phone"
+                            val (newToken, _, regError) = withContext(Dispatchers.IO) {
+                                DfcApi.registerDevice(serverUrl.trim(), password, deviceName)
+                            }
+                            if (newToken == null) {
+                                finishWithToken(false, regError)
+                            } else {
+                                // Verify before persisting: registration succeeded
+                                // server-side, but the address must also work for
+                                // real traffic from this phone.
+                                existing.token = newToken
+                                existing.serverUrl = serverUrl.trim()
+                                val (ok, msg) = withContext(Dispatchers.IO) {
+                                    runCatching { DfcApi.get(context).verify() }
+                                }.getOrElse { false to (it.message ?: "connection failed") }
+                                if (!ok) existing.token = ""
+                                finishWithToken(ok, msg)
+                            }
                         }
                     }
                 },
@@ -197,7 +259,7 @@ fun SetupScreen(
             ) {
                 Text(
                     text = message,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = currentType.bodyMuted,
                     color = MaterialTheme.colorScheme.error,
                 )
             }

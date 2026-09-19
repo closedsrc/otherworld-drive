@@ -118,9 +118,4 @@ object UploadTracker {
         _current.value = null
         _runActive.value = false
     }
-
-    /** Test/diagnostic helper: no caller in the app drops the history. */
-    fun clearHistory() {
-        _completed.value = emptyList()
-    }
 }

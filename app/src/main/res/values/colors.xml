@@ -1,5 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Launcher icon only. Every in-app colour lives in the Compose theme. -->
-    <color name="accent">#A6422A</color>
+    <!--
+      Launcher icon only. Every in-app colour lives in the Compose theme.
+
+      The mark is the app's own warm off-white (the dark theme's text colour), so
+      it belongs to the product rather than being a stark #FFFFFF. The tile is
+      graphite rather than the app's near-black surface: a near-black tile stops
+      reading as a tile against a dark wallpaper, which leaves the ring floating
+      with nothing behind it. At #2A2A2A the tile is legible on light and dark
+      home screens alike, and the mark still clears 12.6:1 against it.
+    -->
+    <color name="icon_background">#2A2A2A</color>
+    <color name="icon_foreground">#F2F0ED</color>
 </resources>

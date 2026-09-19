@@ -2,6 +2,7 @@ package com.dfc.mobile.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,11 +10,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.Description
@@ -23,7 +27,6 @@ import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.InsertDriveFile
 import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.SearchOff
-import androidx.compose.material.icons.outlined.UploadFile
 import androidx.compose.material.icons.outlined.Videocam
 import androidx.compose.material.icons.outlined.FolderZip
 import androidx.compose.material3.Icon
@@ -32,6 +35,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -88,65 +92,7 @@ fun SectionHeader(
     }
 }
 
-/**
- * Empty state: says what is missing, why, and the next action. A bare "no data"
- * line would leave the user with no idea whether the app is working.
- */
-@Composable
-fun EmptyState(
-    icon: ImageVector,
-    title: String,
-    body: String,
-    modifier: Modifier = Modifier,
-    action: @Composable (() -> Unit)? = null,
-) {
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = Spacing.xl, vertical = Spacing.xl),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(56.dp)
-                .background(
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    shape = RoundedCornerShape(Radii.card),
-                )
-                .border(
-                    width = 1.dp,
-                    color = MaterialTheme.colorScheme.outlineVariant,
-                    shape = RoundedCornerShape(Radii.card),
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(24.dp),
-            )
-        }
-        Spacer(Modifier.height(Spacing.md))
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-            textAlign = TextAlign.Center,
-        )
-        Spacer(Modifier.height(Spacing.xs))
-        Text(
-            text = body,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-        )
-        if (action != null) {
-            Spacer(Modifier.height(Spacing.md))
-            action()
-        }
-    }
-}
+
 
 /** The three empty states the app can actually reach, named for reuse. */
 @Composable
@@ -177,72 +123,95 @@ fun NoResults(query: String, modifier: Modifier = Modifier) =
         modifier = modifier,
     )
 
-@Composable
-fun NoVideosFound(modifier: Modifier = Modifier) =
-    EmptyState(
-        icon = Icons.Outlined.Videocam,
-        title = "No videos here",
-        body = "This folder holds no video files.",
-        modifier = modifier,
-    )
 
-@Composable
-fun NoUploadsForFile(modifier: Modifier = Modifier) =
-    EmptyState(
-        icon = Icons.Outlined.UploadFile,
-        title = "Nothing waiting",
-        body = "Every file on this device is already on the drive.",
-        modifier = modifier,
-    )
 
-/** Two-line metadata row used by list rows: size, then separator, then time. */
-@Composable
-fun MetaLine(sizeText: String, timeText: String, modifier: Modifier = Modifier) {
-    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            text = sizeText,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            text = "  ·  ",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.outline,
-        )
-        Text(
-            text = timeText,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
-/** Right-pointing chevron for rows that lead somewhere. */
+/**
+ * Right-pointing chevron for rows that lead somewhere. It uses the muted text
+ * colour rather than `outline`: outline is a border token (about 1.1:1 against
+ * the surface in light mode), which made the only affordance on the row
+ * effectively invisible.
+ */
 @Composable
 fun RowChevron(modifier: Modifier = Modifier) {
     Icon(
         imageVector = Icons.Filled.ChevronRight,
         contentDescription = null,
-        tint = MaterialTheme.colorScheme.outline,
+        tint = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = modifier.size(18.dp),
     )
 }
 
-/** Horizontal hairline used to separate rows without boxing each one. */
+/**
+ * The checkmark that marks a selected item. Shared by the drive list and the
+ * library grid: two copies of it had already drifted apart once, and a selection
+ * control is the last thing that should look different between screens.
+ */
 @Composable
-fun Divider(modifier: Modifier = Modifier, inset: Int = 0) {
+fun SelectionDot(selected: Boolean, modifier: Modifier = Modifier) {
+    val bg = if (selected) MaterialTheme.colorScheme.primary
+    else Color.Black.copy(alpha = 0.45f)
     Box(
         modifier = modifier
-            .fillMaxWidth()
-            .padding(start = inset.dp)
-            .height(1.dp)
-            .background(MaterialTheme.colorScheme.outlineVariant),
-    )
+            .size(20.dp)
+            .clip(CircleShape)
+            .background(bg)
+            .border(
+                width = if (selected) 0.dp else 1.5.dp,
+                color = if (selected) Color.Transparent else Color.White.copy(alpha = 0.85f),
+                shape = CircleShape,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (selected) {
+            Icon(
+                imageVector = Icons.Filled.Check,
+                contentDescription = "Selected",
+                tint = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier.size(14.dp),
+            )
+        }
+    }
 }
+
+/**
+ * One labelled action in a selection bar, shared by the drive list and the
+ * library grid. The 44dp floor is not decoration: at text height these were
+ * around 33dp and missed the tap more often than they hit it.
+ */
+@Composable
+fun SelectionAction(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    tint: Color = MaterialTheme.colorScheme.onPrimaryContainer,
+) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(Radii.control))
+            .clickable(enabled = enabled, onClick = onClick)
+            .heightIn(min = 48.dp)
+            .padding(horizontal = Spacing.xs, vertical = Spacing.xs),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = if (enabled) tint else tint.copy(alpha = 0.4f),
+            modifier = Modifier.size(18.dp),
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (enabled) tint else tint.copy(alpha = 0.4f),
+            maxLines = 1,
+        )
+    }
+}
+
+
 
 /** Even vertical rhythm between stacked sections. */
 @Composable

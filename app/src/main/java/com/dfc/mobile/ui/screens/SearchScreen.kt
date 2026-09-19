@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -21,6 +22,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
@@ -44,11 +46,14 @@ import com.dfc.mobile.RemoteFile
 import com.dfc.mobile.data.MediaItem
 import com.dfc.mobile.ui.DfcViewModel
 import com.dfc.mobile.ui.DfcViewModel.Kind
+import com.dfc.mobile.ui.BarIcon
 import com.dfc.mobile.ui.ScreenTitle
+import com.dfc.mobile.ui.components.MediaThumb
 import com.dfc.mobile.ui.components.NoResults
 import com.dfc.mobile.ui.theme.Radii
 import com.dfc.mobile.ui.theme.Spacing
 import kotlinx.coroutines.delay
+import com.dfc.mobile.ui.theme.currentType
 
 /** File-type filters. "All" is the default and every other chip narrows it. */
 private enum class Filter(val label: String) {
@@ -61,9 +66,9 @@ private enum class Filter(val label: String) {
 }
 
 /**
- * Search runs over what the app has already fetched: the local backup index and
- * the folder listings opened this session. It is honest about its scope, and it
- * never shows a spinner between keystrokes: results either match or they do not.
+ * Search runs against the whole drive on the server plus this phone's backup
+ * index, so an unopened folder can still match. It never shows a spinner
+ * between keystrokes: results either match or they do not.
  */
 @Composable
 fun SearchScreen(
@@ -74,6 +79,7 @@ fun SearchScreen(
     onSearchRemote: suspend (String) -> List<RemoteFile>,
     classify: (RemoteFile) -> Kind,
     modifier: Modifier = Modifier,
+    onClose: (() -> Unit)? = null,
 ) {
     var query by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf(Filter.ALL) }
@@ -97,9 +103,9 @@ fun SearchScreen(
 
     val needle = query.trim().lowercase()
 
-    val localMedia = remember(needle, filter, ui.gallery) {
+    val localMedia = remember(needle, filter, ui.timeline) {
         if (needle.isEmpty()) emptyList()
-        else ui.gallery.filter { it.displayName.lowercase().contains(needle) }
+        else ui.timeline.filter { it.displayName.lowercase().contains(needle) }
     }
     val localFiles = remember(needle, filter, ui.entries) {
         if (needle.isEmpty()) emptyList()
@@ -136,10 +142,22 @@ fun SearchScreen(
         contentPadding = PaddingValues(bottom = Spacing.navClearance),
     ) {
         item(key = "title") {
-            ScreenTitle(
-                title = "Search",
-                subtitle = "Across this device's index and the server",
-            )
+            // Search is reached from the library's top bar, so it is a surface
+            // over the app rather than a tab, and it carries its own way out.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (onClose != null) {
+                    BarIcon(
+                        icon = Icons.Filled.ArrowBack,
+                        contentDescription = "Close search",
+                        onClick = onClose,
+                    )
+                }
+                ScreenTitle(
+                    title = "Search",
+                    subtitle = "This phone's library and the drive",
+                    modifier = Modifier.weight(1f),
+                )
+            }
         }
         item(key = "field") {
             Box(Modifier.padding(horizontal = Spacing.md)) {
@@ -158,14 +176,22 @@ fun SearchScreen(
                     },
                     trailingIcon = {
                         if (query.isNotEmpty()) {
-                            Icon(
-                                imageVector = Icons.Filled.Close,
-                                contentDescription = "Clear the search",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            // 44dp box around a 20dp glyph: tapping the glyph
+                            // itself is a miss more often than not.
+                            Box(
                                 modifier = Modifier
-                                    .size(20.dp)
+                                    .size(48.dp)
+                                    .clip(RoundedCornerShape(Radii.control))
                                     .clickable { query = "" },
-                            )
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Close,
+                                    contentDescription = "Clear the search",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            }
                         }
                     },
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
@@ -197,7 +223,7 @@ fun SearchScreen(
             query.trim().isEmpty() -> item(key = "idle") {
                 Spacer(Modifier.height(Spacing.xl))
                 SearchHint(
-                    hasIndex = ui.gallery.isNotEmpty(),
+                    hasIndex = ui.timeline.isNotEmpty(),
                     backedUp = ui.backedUp,
                 )
             }
@@ -232,8 +258,9 @@ fun SearchScreen(
                     }
                     items(visibleRemote, key = { "r-${it.id}" }) { file ->
                         if (file.isDir) {
-                            FolderRow(
+                            FileRow(
                                 file = file,
+                                kind = DfcViewModel.Kind.FOLDER,
                                 selected = false,
                                 selecting = false,
                                 onClick = { onOpenFolder(file) },
@@ -269,7 +296,7 @@ fun SearchScreen(
 @Composable
 private fun FileRowWrapper(content: @Composable () -> Unit) = content()
 
-/** Result row for an indexed backup: name plus its real size. */
+/** Result row for an indexed item: name, size, and its real backup state. */
 @Composable
 private fun GalleryResultRow(item: MediaItem, onClick: () -> Unit) {
     Row(
@@ -279,10 +306,8 @@ private fun GalleryResultRow(item: MediaItem, onClick: () -> Unit) {
             .padding(horizontal = Spacing.md, vertical = Spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        com.dfc.mobile.ui.components.Thumb(
-            fileId = item.remoteId ?: "",
-            kind = if (item.isVideo) Kind.VIDEO else Kind.IMAGE,
-            name = item.displayName,
+        MediaThumb(
+            item = item,
             modifier = Modifier
                 .size(38.dp)
                 .clip(RoundedCornerShape(Radii.control)),
@@ -291,14 +316,21 @@ private fun GalleryResultRow(item: MediaItem, onClick: () -> Unit) {
         Column(Modifier.weight(1f)) {
             Text(
                 text = item.displayName,
-                style = MaterialTheme.typography.bodyLarge,
+                style = currentType.body,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = "${formatBytes(item.size)}  ·  backed up",
-                style = MaterialTheme.typography.labelSmall,
+                // Every state name here is real: this list now includes items
+                // that have not been uploaded, so a flat "backed up" was wrong.
+                text = "${formatBytes(item.size)}  ·  " + when (item.state) {
+                    1 -> "backed up"
+                    2 -> "last upload failed"
+                    3 -> "removed from the drive"
+                    else -> "not backed up yet"
+                },
+                style = currentType.meta,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -309,7 +341,7 @@ private fun GalleryResultRow(item: MediaItem, onClick: () -> Unit) {
 private fun ResultHeader(title: String, count: Int) {
     Text(
         text = "$title  ·  $count",
-        style = MaterialTheme.typography.labelMedium,
+        style = currentType.meta,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(
             start = Spacing.md, top = Spacing.lg, bottom = Spacing.xs
@@ -328,11 +360,14 @@ private fun FilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
                 else MaterialTheme.colorScheme.surfaceContainer
             )
             .clickable(onClick = onClick)
-            .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+            // 44dp tall rather than the ~33dp that text plus 8dp padding made.
+            .heightIn(min = 48.dp)
+            .padding(horizontal = Spacing.md),
+        contentAlignment = Alignment.Center,
     ) {
         Text(
             text = label,
-            style = MaterialTheme.typography.labelMedium,
+            style = currentType.meta,
             color = if (selected) MaterialTheme.colorScheme.onPrimary
             else MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -350,14 +385,14 @@ private fun SearchHint(hasIndex: Boolean, backedUp: Int) {
     ) {
         Text(
             text = if (hasIndex) "Search $backedUp indexed items" else "Nothing indexed yet",
-            style = MaterialTheme.typography.titleMedium,
+            style = currentType.item,
             color = MaterialTheme.colorScheme.onSurface,
         )
         Spacer(Modifier.height(Spacing.xs))
         Text(
-            text = "Matching runs against files this device has recorded and folders " +
-                "you have opened. Names only; file contents are not indexed.",
-            style = MaterialTheme.typography.bodyMedium,
+            text = "Matching runs against the whole drive and files this device " +
+                "has recorded. Names only; file contents are not indexed.",
+            style = currentType.bodyMuted,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }

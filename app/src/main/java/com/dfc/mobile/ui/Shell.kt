@@ -11,7 +11,6 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -25,13 +24,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.PhotoAlbum
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.Folder
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.PhotoAlbum
+import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -50,17 +49,21 @@ import androidx.compose.ui.unit.dp
 import com.dfc.mobile.ui.theme.Radii
 import com.dfc.mobile.ui.theme.Spacing
 
-/** The five destinations, in the order they appear in the bar. */
+/**
+ * The five destinations, in the order they appear in the bar. Photos leads
+ * because the library is what the app is opened for: what is on this phone, and
+ * is it safe. Everything else is one step behind it.
+ */
 enum class Destination(
     val route: String,
     val label: String,
     val filled: ImageVector,
     val outlined: ImageVector,
 ) {
-    HOME("home", "Home", Icons.Filled.Home, Icons.Outlined.Home),
+    PHOTOS("photos", "Photos", Icons.Filled.PhotoLibrary, Icons.Outlined.PhotoLibrary),
+    ALBUMS("albums", "Albums", Icons.Filled.PhotoAlbum, Icons.Outlined.PhotoAlbum),
     FILES("files", "Files", Icons.Filled.Folder, Icons.Outlined.Folder),
     UPLOADS("uploads", "Uploads", Icons.Filled.CloudUpload, Icons.Outlined.CloudUpload),
-    SEARCH("search", "Search", Icons.Filled.Search, Icons.Outlined.Search),
     SETTINGS("settings", "Settings", Icons.Filled.Settings, Icons.Outlined.Settings),
 }
 
@@ -89,13 +92,16 @@ fun DfcBottomBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(vertical = Spacing.sm),
-            horizontalArrangement = Arrangement.SpaceEvenly,
         ) {
             Destination.entries.forEach { dest ->
                 NavItem(
                     dest = dest,
                     selected = dest == current,
                     onClick = { onSelect(dest) },
+                    // Equal columns. Sized to content, the item that was selected
+                    // grew by the width of its label (measured: 162px vs 192px),
+                    // so choosing a tab slid every other tab sideways.
+                    modifier = Modifier.weight(1f),
                 )
             }
         }
@@ -107,6 +113,7 @@ private fun NavItem(
     dest: Destination,
     selected: Boolean,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     // Icon and label both react, so the state change registers at a glance
     // without a moving indicator that would fight the content.
@@ -119,14 +126,14 @@ private fun NavItem(
     else MaterialTheme.colorScheme.onSurfaceVariant
 
     Column(
-        modifier = Modifier
+        modifier = modifier
             .clip(RoundedCornerShape(Radii.control))
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 onClick = onClick,
             )
-            .padding(horizontal = Spacing.md, vertical = Spacing.xs),
+            .padding(vertical = Spacing.xs),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Icon(
@@ -138,18 +145,26 @@ private fun NavItem(
                 .scale(scale),
         )
         Spacer(Modifier.height(3.dp))
-        AnimatedVisibility(
-            visible = selected,
-            enter = fadeIn(tween(160)) + scaleIn(tween(160), initialScale = 0.8f),
-            exit = fadeOut(tween(100)) + scaleOut(tween(100), targetScale = 0.8f),
-        ) {
-            Text(
-                text = dest.label,
-                style = MaterialTheme.typography.labelSmall,
-                color = tint,
-            )
+        // A fixed-height slot rather than AnimatedVisibility plus a conditional
+        // spacer: during the exit animation both the fading label and the spacer
+        // occupied layout, so the item grew 16dp and the whole bar jolted on
+        // every tab change.
+        Box(Modifier.height(16.dp), contentAlignment = Alignment.Center) {
+            // Explicitly the top-level overload: inside a ColumnScope (this Box
+            // still has it as an implicit receiver) the scoped variant wins
+            // resolution and cannot be called from here.
+            androidx.compose.animation.AnimatedVisibility(
+                visible = selected,
+                enter = fadeIn(tween(160)) + scaleIn(tween(160), initialScale = 0.8f),
+                exit = fadeOut(tween(100)) + scaleOut(tween(100), targetScale = 0.8f),
+            ) {
+                Text(
+                    text = dest.label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tint,
+                )
+            }
         }
-        if (!selected) Spacer(Modifier.height(16.dp))
     }
 }
 
@@ -176,25 +191,7 @@ fun Modifier.pressFeedback(
     }
 }
 
-/**
- * One-shot entrance used by the top of a screen: each block fades up shortly
- * after the one above it, so the screen reads as arriving in the order you are
- * meant to read it. Only the first few blocks stagger; the rest of a list
- * appears at once, because a long stagger just makes scrolling feel broken.
- *
- * The flag is owned by the caller rather than by this composable so a list item
- * that scrolls out and back does not replay the entrance.
- */
-@Composable
-fun RiseIn(visible: Boolean, index: Int = 0, content: @Composable () -> Unit) {
-    AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn(tween(200, delayMillis = index * 45)) +
-            slideInVertically(tween(240, delayMillis = index * 45)) { it / 7 },
-    ) {
-        content()
-    }
-}
+
 
 /** Page title block, used where a screen has no selection bar of its own. */
 @Composable
@@ -228,32 +225,7 @@ fun ScreenTitle(
     }
 }
 
-/** Compact top bar for screens that morph into selection mode. */
-@Composable
-fun DfcTopBar(
-    title: String,
-    modifier: Modifier = Modifier,
-    leading: @Composable (() -> Unit)? = null,
-    trailing: @Composable (() -> Unit)? = null,
-) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = Spacing.sm, vertical = Spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        leading?.invoke()
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier
-                .weight(1f)
-                .padding(start = if (leading == null) Spacing.sm else Spacing.xs),
-        )
-        trailing?.invoke()
-    }
-}
+
 
 /** Icon button used in every top bar, sized to a 44dp touch target. */
 @Composable
@@ -265,7 +237,7 @@ fun BarIcon(
 ) {
     Box(
         modifier = modifier
-            .size(44.dp)
+            .size(48.dp)
             .clip(RoundedCornerShape(Radii.control))
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
@@ -279,8 +251,4 @@ fun BarIcon(
     }
 }
 
-/** Vertical gap helper so screens do not hand-roll spacing values. */
-@Composable
-fun Gap(height: androidx.compose.ui.unit.Dp) {
-    Spacer(Modifier.height(height))
-}
+

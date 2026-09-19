@@ -3,7 +3,6 @@ package com.dfc.mobile.ui.screens
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -19,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.Icon
@@ -40,14 +40,15 @@ import com.dfc.mobile.ui.relativeTime
 import com.dfc.mobile.ui.DfcViewModel
 import com.dfc.mobile.ui.DfcViewModel.Kind
 import com.dfc.mobile.ui.ScreenTitle
+import com.dfc.mobile.ui.components.EmptyState
 import com.dfc.mobile.ui.components.GhostButton
-import com.dfc.mobile.ui.components.NoUploadsForFile
 import com.dfc.mobile.ui.components.NoUploadsYet
 import com.dfc.mobile.ui.components.PrimaryButton
 import com.dfc.mobile.ui.components.SectionHeader
 import com.dfc.mobile.ui.components.Thumb
 import com.dfc.mobile.ui.theme.Radii
 import com.dfc.mobile.ui.theme.Spacing
+import com.dfc.mobile.ui.theme.currentType
 
 /**
  * Uploads exists because a backup you cannot see is a backup you do not trust.
@@ -169,20 +170,20 @@ private fun LiveCard(job: UploadTracker.Job) {
             Column(Modifier.weight(1f)) {
                 Text(
                     text = job.displayName,
-                    style = MaterialTheme.typography.bodyLarge,
+                    style = currentType.body,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
                     text = "${formatBytes(job.sentBytes)} of ${formatBytes(job.totalBytes)}",
-                    style = MaterialTheme.typography.labelSmall,
+                    style = currentType.meta,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             Text(
                 text = "Sending",
-                style = MaterialTheme.typography.labelMedium,
+                style = currentType.meta,
                 color = MaterialTheme.colorScheme.primary,
             )
         }
@@ -202,22 +203,22 @@ private fun LiveCard(job: UploadTracker.Job) {
             Text(
                 text = if (job.bytesPerSecond > 0)
                     "${formatBytes(job.bytesPerSecond)}/s" else "starting",
-                style = MaterialTheme.typography.labelSmall,
+                style = currentType.meta,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f),
             )
             Text(
                 text = if (job.remainingSeconds > 0)
                     "${formatDuration(job.remainingSeconds)} left" else "estimating",
-                style = MaterialTheme.typography.labelSmall,
+                style = currentType.meta,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         Spacer(Modifier.height(Spacing.sm))
         Text(
             text = "File ${job.indexInRun + 1} of ${job.runSize} in this run",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.outline,
+            style = currentType.meta,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
@@ -253,13 +254,15 @@ private fun QueueCard(
         Column(Modifier.weight(1f)) {
             Text(
                 text = if (pending == 1) "1 item waiting" else "$pending items waiting",
-                style = MaterialTheme.typography.bodyLarge,
+                style = currentType.body,
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Text(
-                text = if (wifiOnly) "Runs on Wi-Fi when charging"
-                else "Runs on any connection when charging",
-                style = MaterialTheme.typography.labelSmall,
+                // The worker's constraint is "battery not low", not "charging", so
+                // saying "when charging" described a rule the app does not have.
+                text = if (wifiOnly) "Runs on Wi-Fi once the battery is not low"
+                else "Runs on any connection once the battery is not low",
+                style = currentType.meta,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -292,7 +295,7 @@ private fun DoneRow(done: UploadTracker.Done) {
         Column(Modifier.weight(1f)) {
             Text(
                 text = done.displayName,
-                style = MaterialTheme.typography.bodyMedium,
+                style = currentType.bodyMuted,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -300,7 +303,7 @@ private fun DoneRow(done: UploadTracker.Done) {
             Text(
                 text = "${formatBytes(done.sizeBytes)}  ·  ${relativeTime(done.at / 1000)}" +
                     if (done.ok) "" else "  ·  failed, will retry",
-                style = MaterialTheme.typography.labelSmall,
+                style = currentType.meta,
                 color = if (done.ok) MaterialTheme.colorScheme.onSurfaceVariant
                 else MaterialTheme.colorScheme.error,
             )
@@ -316,7 +319,15 @@ private fun NotConnectedForUploads(onOpenSettings: () -> Unit) {
             .padding(horizontal = Spacing.md),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        NoUploadsForFile()
+        // Deliberately not the "nothing waiting" card: that one says every file
+        // is already on the drive, which is the opposite of the truth when no
+        // server is configured at all.
+        EmptyState(
+            icon = Icons.Outlined.CloudOff,
+            title = "Not connected",
+            body = "No drive is set up, so nothing from this phone has been backed up. " +
+                "Add the write token and the next run will index this phone.",
+        )
         Spacer(Modifier.height(Spacing.md))
         GhostButton(text = "Open settings", onClick = onOpenSettings)
     }

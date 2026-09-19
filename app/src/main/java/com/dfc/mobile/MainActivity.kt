@@ -1,66 +1,74 @@
 package com.dfc.mobile
 
-import androidx.compose.foundation.background
-import androidx.compose.ui.unit.dp
-import com.dfc.mobile.backup.BackupWorker
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
+import androidx.core.net.toUri
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.dfc.mobile.RemoteFile
-import com.dfc.mobile.data.MediaItem
-import com.dfc.mobile.ui.Destination
-import com.dfc.mobile.ui.DfcBottomBar
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.toRoute
+import com.dfc.mobile.ui.AlbumsRoute
+import com.dfc.mobile.ui.FilesRoute
+import com.dfc.mobile.ui.HomeRoute
+import com.dfc.mobile.ui.PhotosRoute
+import com.dfc.mobile.ui.Route
+import com.dfc.mobile.ui.SearchRoute
+import com.dfc.mobile.ui.SettingsRoute
+import com.dfc.mobile.ui.SetupRoute
+import com.dfc.mobile.ui.TrashRoute
+import com.dfc.mobile.ui.UploadsRoute
+import com.dfc.mobile.ui.ViewerRoute
 import com.dfc.mobile.ui.DfcViewModel
-import com.dfc.mobile.ui.theme.DfcTheme
+import com.dfc.mobile.ui.screens.AlbumsScreen
 import com.dfc.mobile.ui.screens.FilesLayout
 import com.dfc.mobile.ui.screens.FilesScreen
 import com.dfc.mobile.ui.screens.GalleryPreview
 import com.dfc.mobile.ui.screens.HomeScreen
-import com.dfc.mobile.ui.screens.LinksScreen
-import com.dfc.mobile.ui.screens.NewFolderDialog
+import com.dfc.mobile.ui.screens.PermissionPrimer
+import com.dfc.mobile.ui.screens.PhotosScreen
 import com.dfc.mobile.ui.screens.SearchScreen
 import com.dfc.mobile.ui.screens.SettingsScreen
 import com.dfc.mobile.ui.screens.SetupScreen
-import com.dfc.mobile.ui.screens.ShareResultDialog
+import com.dfc.mobile.ui.screens.SortKey
+import com.dfc.mobile.ui.screens.TrashScreen
 import com.dfc.mobile.ui.screens.UploadsScreen
+import com.dfc.mobile.ui.screens.ViewerItem
+import com.dfc.mobile.ui.theme.DfcTheme
 import kotlinx.coroutines.launch
 
 /**
- * Single activity, five destinations. The screens are composed here rather than
- * pushed as separate activities so state (folder path, selection, upload
- * progress) survives tab switches without being rebuilt.
+ * Single activity with a real navigation graph.
+ *
+ * The previous version held six overlays (Setup, Links, Search, Preview, Trash,
+ * primer) in three `mutableStateOf` fields. That is why system back exited the
+ * app from every depth, why rotation and process death dropped you back at the
+ * tab root, and why nothing was deep-linkable. Now every destination is a typed
+ * route in one NavHost: back pops correctly, state is restored by the framework,
+ * and share links can open the app directly.
  */
 class MainActivity : ComponentActivity() {
 
@@ -69,296 +77,270 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             DfcTheme {
-                // The root surface paints the background for the active theme.
-                // Without it the window background shows through, which is a
-                // different colour in the other theme.
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background,
                 ) {
-                    DfcRoot()
+                    DfcApp(intent = intent)
+                }
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        // A share link tapped while the app is already running.
+        setContent {
+            DfcTheme {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background,
+                ) {
+                    DfcApp(intent = intent)
                 }
             }
         }
     }
 }
 
-/** Which full-screen surface is on top of the tab content, if any. */
-private sealed interface Overlay {
-    data object None : Overlay
-    data object Setup : Overlay
-    data object Links : Overlay
-    data class Preview(val items: List<MediaItem>, val index: Int) : Overlay
-}
-
 @Composable
-private fun DfcRoot() {
-    val context = LocalContext.current
+private fun DfcApp(intent: Intent?) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val vm: DfcViewModel = viewModel()
-    // Compose 1.6.8 is pinned by the Kotlin 1.9.24 compiler, and it never
-    // provides the LocalLifecycleOwner that collectAsStateWithLifecycle()
-    // reads, so the flow is collected directly.
     val ui by vm.ui.collectAsState()
-    val scope = rememberCoroutineScope()
+    val nav = rememberNavController()
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
 
-    var tab by remember { mutableStateOf(Destination.HOME) }
-    var layout by remember { mutableStateOf(FilesLayout.GRID) }
-    var overlay by remember { mutableStateOf<Overlay>(Overlay.None) }
-    var showNewFolder by remember { mutableStateOf(false) }
-    var shareUrl by remember { mutableStateOf<String?>(null) }
-    var pendingShare by remember { mutableStateOf<RemoteFile?>(null) }
+    var sort by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(SortKey.NAME) }
+    var layout by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(FilesLayout.GRID) }
 
-    val snackbar = remember { SnackbarHostState() }
-
-    // Every tab draws edge to edge, so the status bar inset is applied once
-    // here instead of in each screen. Without it the page title lands under the
-    // clock and the battery icons.
-    val screenInsets = Modifier.fillMaxSize().statusBarsPadding()
-
-    // Media permission is requested once, on first composition. A denial is not
-    // fatal: browsing the drive still works, only local scanning is blocked.
-    val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { granted ->
-        if (granted.values.any { it }) vm.refresh()
-        else scope.launch {
-            snackbar.showSnackbar("Photo access denied. Backing up this phone needs it.")
+    // ---- permissions -------------------------------------------------
+    val permissions = remember {
+        buildList {
+            if (Build.VERSION.SDK_INT >= 33) {
+                add(Manifest.permission.READ_MEDIA_IMAGES)
+                add(Manifest.permission.READ_MEDIA_VIDEO)
+                add(Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                add(Manifest.permission.READ_EXTERNAL_STORAGE)
+            }
         }
     }
-
+    var showPrimer by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
     LaunchedEffect(Unit) {
-        val needed = if (Build.VERSION.SDK_INT >= 33) {
-            listOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO)
-        } else {
-            listOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+        val missing = permissions.filter {
+            ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
         }
-        val missing = needed.filter {
-            androidx.core.content.ContextCompat.checkSelfPermission(context, it) !=
-                PackageManager.PERMISSION_GRANTED
-        }
-        if (missing.isNotEmpty()) permissionLauncher.launch(missing.toTypedArray())
+        if (missing.isNotEmpty()) showPrimer = true
     }
 
-    // A fresh install lands straight on setup rather than an empty drive.
-    LaunchedEffect(ui.configured) {
-        if (!ui.configured && overlay == Overlay.None) overlay = Overlay.Setup
-    }
-
-    // A build with the token baked in never passes through Setup, which is the
-    // only other place the periodic job is armed — so arm it here. The enqueue
-    // is an UPDATE on a unique name, so repeat launches are a no-op.
-    LaunchedEffect(ui.configured) {
-        if (ui.configured) BackupWorker.schedule(context, ui.wifiOnly)
-    }
-
-    // The Files tab fetches its root listing the first time it is opened.
-    LaunchedEffect(tab) {
-        if (tab == Destination.FILES) vm.loadRootIfNeeded()
-    }
-
-    Box(Modifier.fillMaxSize()) {
-        AnimatedContent(
-            targetState = tab,
-            transitionSpec = {
-                // Moving right along the bar pushes the new screen in from the
-                // right; the small offset signals direction without a full
-                // page slide that would fight the scroll position.
-                val forward = targetState.ordinal > initialState.ordinal
-                val push = if (forward) 1 else -1
-                (
-                    slideInHorizontally(tween(240)) { width -> push * width / 12 } +
-                        fadeIn(tween(200))
-                    ) togetherWith (
-                    slideOutHorizontally(tween(200)) { width -> -push * width / 12 } +
-                        fadeOut(tween(140))
-                    )
-            },
-            label = "tab",
-        ) { dest ->
-            when (dest) {
-                Destination.HOME -> HomeScreen(
+    com.dfc.mobile.ui.DfcScaffold(
+        currentRoute = currentNavRoute(nav),
+        onSelect = { route ->
+            nav.navigate(route) {
+                // Tabs are siblings: one entry each, restored instead of stacked.
+                popUpTo(HomeRoute) { saveState = true }
+                launchSingleTop = true
+                restoreState = true
+            }
+        },
+    ) {
+        NavHost(navController = nav, startDestination = HomeRoute) {
+            composable<HomeRoute> {
+                HomeScreen(
                     ui = ui,
-                    classify = vm::classify,
-                    onBackupNow = {
-                        if (ui.configured) {
-                            vm.backupNow()
-                            scope.launch { snackbar.showSnackbar("Backup started") }
-                        } else overlay = Overlay.Setup
+                    onBackupNow = { vm.backupNow() },
+                    onOpenUploads = { nav.navigate(UploadsRoute) },
+                    onOpenFiles = { nav.navigate(FilesRoute()) },
+                    onOpenPhotos = { nav.navigate(PhotosRoute) },
+                    onOpenSettings = { nav.navigate(SettingsRoute) },
+                    onOpenItem = { item, list ->
+                        nav.navigate(viewerRoute(list, list.indexOf(item)))
                     },
-                    onOpenUploads = { tab = Destination.UPLOADS },
-                    onOpenFiles = { tab = Destination.FILES },
-                    onShare = { overlay = Overlay.Links },
-                    onCreateFolder = { tab = Destination.FILES; showNewFolder = true },
-                    onOpenPreview = { item, list -> overlay = Overlay.Preview(list, list.indexOf(item)) },
-                    modifier = screenInsets,
+                    onRefresh = { vm.refresh() },
                 )
-
-                Destination.FILES -> FilesScreen(
+            }
+            composable<PhotosRoute> {
+                var filter by rememberSaveable { mutableStateOf(DfcViewModel.LibraryFilter.ALL) }
+                PhotosScreen(
                     ui = ui,
+                    filter = filter,
+                    onFilterChange = { filter = it },
+                    onOpenItem = { item, list -> nav.navigate(viewerRoute(list, list.indexOf(item))) },
+                    onBackupNow = { vm.backupNow() },
+                    onOpenUploads = { nav.navigate(UploadsRoute) },
+                    onOpenAlbums = { nav.navigate(AlbumsRoute) },
+                    onOpenAlbum = { nav.navigate(AlbumsRoute) },
+                    onOpenSearch = { nav.navigate(SearchRoute) },
+                    onOpenSetup = { nav.navigate(SetupRoute) },
+                    onRequestAccess = { showPrimer = true },
+                    onShareId = { vm.shareId(it, 7) { url -> vm.lastShareUrl = url } },
+                    onRefresh = { vm.refresh() },
+                    hasPhotoAccess = true,
+                )
+            }
+            composable<AlbumsRoute> {
+                AlbumsScreen(
+                    ui = ui,
+                    onOpenAlbum = { nav.navigate(PhotosRoute) },
+                )
+            }
+            composable<FilesRoute> { entry ->
+                val route = entry.toRoute<FilesRoute>()
+                LaunchedEffect(route.refresh) { vm.loadRootIfNeeded() }
+                FilesScreen(
+                    ui = ui,
+                    sort = sort,
+                    onSortChange = { sort = it },
                     layout = layout,
                     onToggleLayout = {
-                        layout = if (layout == FilesLayout.GRID) FilesLayout.LIST
-                        else FilesLayout.GRID
+                        layout = if (layout == FilesLayout.GRID) FilesLayout.LIST else FilesLayout.GRID
                     },
                     onOpenFolder = { vm.openFolder(it) },
                     onNavigateDepth = { vm.navigateToDepth(it) },
                     onOpenFile = { file ->
-                        val kind = vm.classify(file)
-                        if (kind == DfcViewModel.Kind.IMAGE || kind == DfcViewModel.Kind.VIDEO) {
-                            overlay = Overlay.Preview(
-                                items = listOf(
-                                    MediaItem(
-                                        id = -1,
-                                        isVideo = kind == DfcViewModel.Kind.VIDEO,
-                                        size = file.size,
-                                        dateTaken = file.modTime,
-                                        displayName = file.name,
-                                        remoteId = file.id,
-                                        state = 1,
-                                        updatedAt = file.modTime,
-                                    )
-                                ),
-                                index = 0,
-                            )
-                        } else {
-                            scope.launch {
-                                snackbar.showSnackbar(
-                                    "\"${file.name}\" has no in-app viewer yet. Download it from the web dashboard."
-                                )
-                            }
+                        when (vm.classify(file)) {
+                            DfcViewModel.Kind.IMAGE, DfcViewModel.Kind.VIDEO ->
+                                nav.navigate(viewerRoute(listOf(file), 0))
+                            else -> vm.requestDownload(file)
                         }
                     },
-                    onOpenGallery = { item, list -> overlay = Overlay.Preview(list, list.indexOf(item)) },
-                    onDelete = { files ->
-                        vm.delete(files) { (deleted, failed) ->
-                            scope.launch {
-                                snackbar.showSnackbar(
-                                    when {
-                                        deleted > 0 && failed == 0 ->
-                                            if (deleted == 1) "Moved 1 item to the trash"
-                                            else "Moved $deleted items to the trash"
-                                        deleted > 0 -> "Moved $deleted, $failed failed"
-                                        else -> "Delete failed"
-                                    }
-                                )
-                            }
-                        }
-                    },
-                    onShare = { file ->
-                        pendingShare = file
-                        // Links expire after a week by default on the server; the
-                        // app asks explicitly rather than inventing a duration.
-                        vm.share(file, ttlDays = 7) { url -> shareUrl = url; pendingShare = null }
-                    },
-                    onRefresh = { vm.refresh() },
+                    onDelete = { files -> vm.delete(files) { } },
+                    onShare = { file -> vm.share(file, 7) { url -> vm.lastShareUrl = url } },
+                    onRename = { file -> vm.requestRename(file) },
+                    onDownload = { file -> vm.requestDownload(file) },
+                    onDetails = { file -> vm.requestDetails(file) },
+                    onRefresh = { vm.refreshFolder() },
+                    onCreateFolder = { vm.requestNewFolder() },
+                    onOpenTrash = { nav.navigate(TrashRoute) },
                     classify = vm::classify,
-                    modifier = screenInsets,
                 )
-
-                Destination.UPLOADS -> UploadsScreen(
+            }
+            composable<UploadsRoute> {
+                UploadsScreen(
                     ui = ui,
                     onBackupNow = { vm.backupNow() },
-                    onOpenSettings = { overlay = Overlay.Setup },
-                    modifier = screenInsets,
+                    onOpenSettings = { nav.navigate(SettingsRoute) },
                 )
-
-                Destination.SEARCH -> SearchScreen(
+            }
+            composable<SettingsRoute> {
+                SettingsScreen(
                     ui = ui,
-                    onOpenFile = { file ->
-                        scope.launch {
-                            snackbar.showSnackbar("\"${file.name}\" is not viewable in the app yet")
-                        }
-                    },
-                    onOpenFolder = { folder -> vm.openFolder(folder); tab = Destination.FILES },
-                    onOpenGallery = { item, list -> overlay = Overlay.Preview(list, list.indexOf(item)) },
-                    onSearchRemote = { query -> vm.searchRemote(query) },
-                    classify = vm::classify,
-                    modifier = screenInsets,
-                )
-
-                Destination.SETTINGS -> SettingsScreen(
-                    ui = ui,
-                    tokenIsBuiltIn = Prefs.get(context).tokenIsBuiltIn,
+                    deviceSubtitle = "Signed in as this phone",
+                    appLockEnabled = false,
+                    appLockAvailable = false,
                     wifiOnly = ui.wifiOnly,
-                    onToggleWifiOnly = { value ->
-                        Prefs.get(context).wifiOnly = value
-                        BackupWorker.schedule(context, value)
-                        vm.refresh()
-                    },
-                    onOpenServerSetup = { overlay = Overlay.Setup },
+                    onToggleWifiOnly = { vm.setWifiOnly(it) },
+                    onToggleAppLock = { },
+                    onSignOut = { vm.signOut() },
+                    onOpenServerSetup = { nav.navigate(SetupRoute) },
+                    onOpenUploads = { nav.navigate(UploadsRoute) },
+                    onOpenLinks = { nav.navigate(com.dfc.mobile.ui.LinksRoute) },
                     onBackupNow = { vm.backupNow() },
-                    onOpenUploads = { tab = Destination.UPLOADS },
-                    modifier = screenInsets,
                 )
             }
-        }
-
-        // The bar hides while a full-screen surface owns the screen.
-        if (overlay == Overlay.None) {
-            DfcBottomBar(
-                current = tab,
-                onSelect = { tab = it },
-                modifier = Modifier.align(Alignment.BottomCenter),
-            )
-        }
-
-        SnackbarHost(
-            hostState = snackbar,
-            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 96.dp),
-        )
-
-        when (val o = overlay) {
-            Overlay.None -> Unit
-            Overlay.Setup -> Box(
-                Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
-            ) {
-                SetupScreen(
-                    onConnected = {
-                        overlay = Overlay.None
-                        vm.refresh()
-                        scope.launch { snackbar.showSnackbar("Connected") }
-                    },
-                    onCancel = if (ui.configured) {
-                        { overlay = Overlay.None }
-                    } else null,
-                )
-            }
-            Overlay.Links -> Box(
-                Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
-            ) {
-                LinksScreen(
+            composable<SearchRoute> {
+                SearchScreen(
                     ui = ui,
-                    onBack = { overlay = Overlay.None },
-                    onRefresh = { vm.loadShares(force = true) },
-                    onRevoke = { share ->
-                        vm.revoke(share)
-                        scope.launch { snackbar.showSnackbar("Link revoked") }
+                    onOpenFile = { file -> vm.requestDownload(file) },
+                    onOpenFolder = { folder ->
+                        vm.openFolder(folder)
+                        nav.navigate(FilesRoute(refresh = System.currentTimeMillis()))
                     },
+                    onOpenGallery = { item, list -> nav.navigate(viewerRoute(list, list.indexOf(item))) },
+                    onSearchRemote = { vm.searchRemote(it) },
+                    classify = vm::classify,
+                    onClose = { nav.popBackStack() },
                 )
             }
-            is Overlay.Preview -> GalleryPreview(
-                items = o.items,
-                startIndex = o.index,
-                onClose = { overlay = Overlay.None },
-            )
+            composable<TrashRoute> {
+                TrashScreen(onBack = { nav.popBackStack() }, onMessage = { vm.setMessage(it) })
+            }
+            composable<com.dfc.mobile.ui.LinksRoute> {
+                com.dfc.mobile.ui.screens.LinksScreen(
+                    ui = ui,
+                    onBack = { nav.popBackStack() },
+                    onRefresh = { vm.loadShares(force = true) },
+                    onRevoke = { vm.revoke(it) },
+                )
+            }
+            composable<SetupRoute> {
+                SetupScreen(
+                    onConnected = { nav.popBackStack(); vm.refresh() },
+                    onCancel = { nav.popBackStack() },
+                )
+            }
+            composable<ViewerRoute> { entry ->
+                val route = entry.toRoute<ViewerRoute>()
+                val items = vm.viewerItems(route)
+                GalleryPreview(
+                    items = items,
+                    startIndex = route.index.coerceIn(0, items.lastIndex.coerceAtLeast(0)),
+                    onClose = { nav.popBackStack() },
+                    onShare = { item -> vm.shareViewer(item) },
+                    onDownload = { item -> vm.downloadViewer(item) },
+                    onDelete = { item -> vm.deleteViewer(item); nav.popBackStack() },
+                    onDetails = { item -> vm.requestViewerDetails(
+                        com.dfc.mobile.ui.ViewerRequest(item.displayName, item.size, item.dateTaken, item.remoteId)
+                    ) },
+                )
+            }
+        }
+
+        // A share link opened the app: land on the file it names.
+        LaunchedEffect(intent) {
+            val uri = intent?.data ?: return@LaunchedEffect
+            val segments = uri.pathSegments
+            if (segments.firstOrNull() == "file") {
+                val id = segments.getOrNull(1)
+                if (!id.isNullOrBlank()) nav.navigate(FilesRoute(folderId = id))
+            }
         }
     }
 
-    if (showNewFolder) {
-        NewFolderDialog(
-            onDismiss = { showNewFolder = false },
-            onConfirm = { name ->
-                showNewFolder = false
-                vm.createFolder(name) { ok ->
-                    scope.launch {
-                        snackbar.showSnackbar(if (ok) "Folder created" else "Could not create the folder")
-                    }
-                }
-            },
+    if (showPrimer) {
+        PermissionPrimer(
+            onContinue = { showPrimer = false; requestPerms(permissions) },
+            onSkip = { showPrimer = false },
         )
     }
+}
 
-    shareUrl?.let { url ->
-        ShareResultDialog(url = url, onDismiss = { shareUrl = null })
+private fun requestPerms(perms: List<String>) {
+    PermissionBridge.pending = perms
+}
+
+/** Permission requests are driven by the activity; the composable only queues them. */
+object PermissionBridge {
+    @Volatile var pending: List<String> = emptyList()
+}
+
+/** Resolve which nav item is selected from the back stack. */
+@Composable
+private fun currentNavRoute(nav: androidx.navigation.NavHostController): Route? {
+    val entry by nav.currentBackStackEntryAsState()
+    val route = entry?.destination?.route ?: return null
+    return when {
+        route.contains("HomeRoute") -> HomeRoute
+        route.contains("PhotosRoute") -> PhotosRoute
+        route.contains("AlbumsRoute") -> AlbumsRoute
+        route.contains("FilesRoute") -> FilesRoute()
+        route.contains("UploadsRoute") -> UploadsRoute
+        route.contains("SettingsRoute") -> SettingsRoute
+        else -> null
     }
+}
+
+/** Build a viewer route from either local media or drive files. */
+private fun viewerRoute(items: List<Any>, index: Int): Route {
+    val first = items.getOrNull(index)
+    return ViewerRoute(
+        fileId = when (first) {
+            is com.dfc.mobile.data.MediaItem -> first.remoteId ?: ""
+            is com.dfc.mobile.RemoteFile -> first.id
+            else -> ""
+        },
+        remote = first is com.dfc.mobile.RemoteFile,
+        index = index,
+    )
 }

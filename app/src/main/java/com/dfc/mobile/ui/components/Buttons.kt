@@ -34,7 +34,7 @@ fun PrimaryButton(
             containerColor = MaterialTheme.colorScheme.primary,
             contentColor = MaterialTheme.colorScheme.onPrimary,
         ),
-        modifier = modifier.height(44.dp),
+        modifier = modifier.height(48.dp),
     ) {
         Text(text = text, style = MaterialTheme.typography.labelLarge)
     }
@@ -52,7 +52,7 @@ fun GhostButton(
         onClick = onClick,
         enabled = enabled,
         shape = RoundedCornerShape(Radii.control),
-        modifier = modifier.height(44.dp),
+        modifier = modifier.height(48.dp),
     ) {
         Text(
             text = text,

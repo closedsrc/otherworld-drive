@@ -1,17 +1,14 @@
 package com.dfc.mobile.ui.screens
 
-import com.dfc.mobile.ui.components.PrimaryButton
-import com.dfc.mobile.ui.components.GhostButton
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -20,457 +17,364 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.CloudDone
-import androidx.compose.material.icons.outlined.CloudOff
-import androidx.compose.material.icons.outlined.Sync
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.CloudQueue
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.dfc.mobile.DfcApi
-import com.dfc.mobile.RemoteFile
-import com.dfc.mobile.backup.UploadTracker
 import com.dfc.mobile.data.MediaItem
-import com.dfc.mobile.ui.RiseIn
-import com.dfc.mobile.ui.formatBytes
-import com.dfc.mobile.ui.pressFeedback
-import com.dfc.mobile.ui.relativeTime
 import com.dfc.mobile.ui.DfcViewModel
-import com.dfc.mobile.ui.ScreenTitle
-import com.dfc.mobile.ui.components.SectionHeader
-import com.dfc.mobile.ui.components.StorageRing
+import com.dfc.mobile.ui.components.DfcCard
+import com.dfc.mobile.ui.components.DfcPrimaryButton
+import com.dfc.mobile.ui.components.EmptyState
 import com.dfc.mobile.ui.components.Thumb
+import com.dfc.mobile.ui.formatBytes
+import com.dfc.mobile.ui.relativeTime
+import com.dfc.mobile.ui.theme.Elevation
 import com.dfc.mobile.ui.theme.Radii
 import com.dfc.mobile.ui.theme.Spacing
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import com.dfc.mobile.ui.theme.currentType
+import com.dfc.mobile.ui.theme.windowSize
 
 /**
- * Home answers three questions in order: how much is stored, is it safe right
- * now, and what changed recently. The ring is the focal point; everything else
- * defers to it.
+ * Home answers four questions, in this order:
+ *
+ *  1. Is my backup working?
+ *  2. Is my data safe?
+ *  3. What needs attention?
+ *  4. What changed recently?
+ *
+ * The old Home inverted this: four equal stat tiles ("4.8 GB / 697 files /
+ * 5 phone / Unlimited") occupied the top, and the backup state — the only thing
+ * a user of a backup app is actually asking about — was a thin caption. Storage
+ * figures are now one tappable row near the bottom, and the hero is the state.
  */
 @Composable
 fun HomeScreen(
     ui: DfcViewModel.Ui,
-    classify: (RemoteFile) -> DfcViewModel.Kind,
     onBackupNow: () -> Unit,
     onOpenUploads: () -> Unit,
     onOpenFiles: () -> Unit,
-    onShare: () -> Unit,
-    onCreateFolder: () -> Unit,
-    onOpenPreview: (MediaItem, List<MediaItem>) -> Unit,
+    onOpenPhotos: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onOpenItem: (MediaItem, List<MediaItem>) -> Unit,
+    onRefresh: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val running by UploadTracker.runActive.collectAsState()
-    val current by UploadTracker.current.collectAsState()
-    val storage = ui.storage
-
-    // The top blocks fade up in reading order, once per visit. The flag lives
-    // here rather than inside RiseIn so a recycled item does not replay it.
-    var revealed by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { revealed = true }
+    val w = windowSize
+    val backedUp = ui.backedUp
+    val pending = ui.pending
+    val needsAttention = pending > 0 && ui.lastBackupAt > 0 &&
+        (System.currentTimeMillis() / 1000 - ui.lastBackupAt) > 6 * 3600
 
     LazyColumn(
-        modifier = modifier,
-        contentPadding = PaddingValues(bottom = Spacing.navClearance),
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(
+            start = if (w.isCompact) Spacing.md else Spacing.lg,
+            end = if (w.isCompact) Spacing.md else Spacing.lg,
+            top = Spacing.md,
+            bottom = Spacing.navClearance,
+        ),
+        verticalArrangement = Arrangement.spacedBy(Spacing.md),
     ) {
-        item(key = "title") {
-            RiseIn(visible = revealed, index = 0) {
-                ScreenTitle(
-                    title = greeting(),
-                    subtitle = if (ui.configured) {
-                        "Private infrastructure"
-                    } else {
-                        "Not connected yet"
-                    },
-                )
-            }
+        // 1 — the state, as the hero
+        item(key = "status") {
+            BackupStatusHero(
+                configured = ui.configured,
+                backedUp = backedUp,
+                pending = pending,
+                lastBackupAt = ui.lastBackupAt,
+                error = ui.error ?: ui.storageError,
+                onBackupNow = onBackupNow,
+                onOpenSettings = onOpenSettings,
+            )
         }
 
-        item(key = "ring") {
-            RiseIn(visible = revealed, index = 1) {
-                StorageCard(
-                    storage = storage,
-                    pending = ui.pending,
-                    backedUp = ui.backedUp,
-                    lastBackupAt = ui.lastBackupAt,
-                    running = running,
-                    job = if (running) current else null,
+        // 2 — what needs attention
+        if (ui.configured && (pending > 0 || needsAttention)) {
+            item(key = "attention") {
+                AttentionCard(
+                    pending = pending,
+                    stale = needsAttention,
+                    onOpenUploads = onOpenUploads,
                     onBackupNow = onBackupNow,
                 )
             }
         }
 
-        item(key = "actions") {
-            RiseIn(visible = revealed, index = 2) {
-                Spacer(Modifier.height(Spacing.lg))
-                Box(Modifier.padding(horizontal = Spacing.md)) {
-                    QuickActions(
-                        onUpload = onBackupNow,
-                        onCreateFolder = onCreateFolder,
-                        onShare = onShare,
-                    )
-                }
+        // 3 — what changed recently
+        item(key = "recentHeader") { SectionHeader("Recently backed up") }
+        if (ui.timeline.isEmpty()) {
+            item(key = "recentEmpty") {
+                EmptyState(
+                    icon = Icons.Filled.CloudQueue,
+                    title = if (ui.indexLoading) "Reading your library…"
+                    else "Nothing backed up yet",
+                    body = if (ui.indexLoading) ""
+                    else "Photos and videos you take will appear here once they are on your drive.",
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
-        }
-
-        // Recent backups: only rendered when there is something to show, so the
-        // first run gets a productive empty state instead of an empty shelf.
-        if (ui.gallery.isNotEmpty()) {
-            item(key = "hdr-recent") {
-                Spacer(Modifier.height(Spacing.xl))
-                Box(Modifier.padding(horizontal = Spacing.md)) {
-                    SectionHeader(
-                        title = "Recent backups",
-                        caption = "${ui.backedUp} items on the drive",
-                    )
-                }
-                Spacer(Modifier.height(Spacing.sm))
-            }
-            item(key = "recent-row") {
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = Spacing.md),
-                    horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
-                ) {
-                    items(ui.gallery.take(12), key = { it.id }) { item ->
-                        RecentCard(item = item, onClick = { onOpenPreview(item, ui.gallery) })
+        } else {
+            item(key = "recent") {
+                val recent = ui.timeline.take(12)
+                val columns = if (w.isCompact) 3 else 6
+                // Chunked rows keep the grid inside a vertically scrolling page
+                // without a nested scrollable measuring conflict.
+                Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                    recent.chunked(columns).forEachIndexed { rowIndex, row ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
+                        ) {
+                            row.forEachIndexed { colIndex, item ->
+                                Box(Modifier.weight(1f)) {
+                                    RecentTile(
+                                        item = item,
+                                        list = recent,
+                                        onClick = { onOpenItem(item, recent) },
+                                    )
+                                }
+                            }
+                            repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+                        }
                     }
                 }
             }
         }
 
-        if (ui.gallery.isEmpty() && ui.configured) {
-            item(key = "empty") {
-                Spacer(Modifier.height(Spacing.xl))
-                Box(Modifier.padding(horizontal = Spacing.md)) {
-                    EmptyHomeCard(ui = ui, onBackupNow = onBackupNow, onOpenUploads = onOpenUploads)
+        // 4 — storage, demoted to a summary row
+        item(key = "storage") {
+            StorageSummary(
+                filesCount = ui.storage?.filesCount,
+                totalBytes = ui.storage?.totalBytes,
+                error = ui.storageError,
+                onOpenFiles = onOpenFiles,
+                onOpenPhotos = onOpenPhotos,
+            )
+        }
+    }
+}
+
+@Composable
+private fun BackupStatusHero(
+    configured: Boolean,
+    backedUp: Int,
+    pending: Int,
+    lastBackupAt: Long,
+    error: String?,
+    onBackupNow: () -> Unit,
+    onOpenSettings: () -> Unit,
+) {
+    val (icon, tint, title, body) = when {
+        !configured -> Quad(
+            Icons.Filled.CloudQueue,
+            MaterialTheme.colorScheme.onSurfaceVariant,
+            "Not connected yet",
+            "Connect this phone to start backing up photos and videos.",
+        )
+        error != null -> Quad(
+            Icons.Filled.ErrorOutline,
+            MaterialTheme.colorScheme.error,
+            "Can't reach your drive",
+            error,
+        )
+        pending > 0 -> Quad(
+            Icons.Filled.CloudQueue,
+            MaterialTheme.colorScheme.primary,
+            "Backing up",
+            "$pending item${if (pending == 1) "" else "s"} waiting · $backedUp already on your drive",
+        )
+        else -> Quad(
+            Icons.Filled.CloudDone,
+            MaterialTheme.colorScheme.primary,
+            "Everything is backed up",
+            if (lastBackupAt > 0L) "Last checked ${relativeTime(lastBackupAt)} · $backedUp items safe"
+            else "$backedUp items safe on your drive",
+        )
+    }
+
+    DfcCard(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(Spacing.lg)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(tint.copy(alpha = 0.14f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = tint,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+                Spacer(Modifier.width(Spacing.md))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = title,
+                        style = currentType.item,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = body,
+                        style = currentType.meta,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
             }
-        }
-
-        if (!ui.configured) {
-            item(key = "unconfigured") {
-                Spacer(Modifier.height(Spacing.xl))
-                Box(Modifier.padding(horizontal = Spacing.md)) {
-                    NotConnectedCard(onOpenSettings = onOpenFiles)
-                }
+            if (error != null) {
+                Spacer(Modifier.height(Spacing.md))
+                DfcPrimaryButton(
+                    text = "Try again",
+                    onClick = onOpenSettings,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            } else if (configured && pending > 0) {
+                Spacer(Modifier.height(Spacing.md))
+                DfcPrimaryButton(
+                    text = "Back up now",
+                    onClick = onBackupNow,
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
         }
     }
 }
 
-/**
- * The storage figure plus the live state of the drive. The centre figure is the
- * sum of what the drive holds; the third stat names the storage model instead
- * of the host disk, because the drive has no quota.
- */
+private data class Quad<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
+
 @Composable
-private fun StorageCard(
-    storage: DfcApi.Stats?,
+private fun AttentionCard(
     pending: Int,
-    backedUp: Int,
-    lastBackupAt: Long,
-    running: Boolean,
-    job: UploadTracker.Job?,
+    stale: Boolean,
+    onOpenUploads: () -> Unit,
     onBackupNow: () -> Unit,
 ) {
-    val shape = RoundedCornerShape(Radii.card)
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = Spacing.md)
-            .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .padding(Spacing.lg),
-        horizontalAlignment = Alignment.CenterHorizontally,
+    DfcCard(
+        modifier = Modifier.fillMaxWidth(),
+        containerColor = MaterialTheme.colorScheme.errorContainer,
     ) {
-        val totalBytes = storage?.totalBytes ?: 0L
-
-        StorageRing(
-            progress = job?.fraction,
-            centerValue = if (storage == null) "..." else formatBytes(totalBytes),
-            centerLabel = if (job != null) "sending" else "stored",
-        )
-
-        Spacer(Modifier.height(Spacing.lg))
-
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.padding(Spacing.md),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Stat(
-                value = (storage?.filesCount ?: 0).toString(),
-                label = "files",
+            Icon(
+                imageVector = Icons.Filled.ErrorOutline,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error,
+            )
+            Spacer(Modifier.width(Spacing.md))
+            Text(
+                text = if (stale) "Backup is overdue — $pending items still waiting"
+                else "$pending item${if (pending == 1) "" else "s"} waiting to back up",
+                style = currentType.body,
+                color = MaterialTheme.colorScheme.onErrorContainer,
                 modifier = Modifier.weight(1f),
             )
-            StatDivider()
-            Stat(
-                value = backedUp.toString(),
-                label = "phone",
-                modifier = Modifier.weight(1f),
-            )
-            StatDivider()
-            Stat(
-                value = "Unlimited",
-                label = "Private infrastructure",
-                modifier = Modifier.weight(1f),
-            )
+            androidx.compose.material3.TextButton(
+                onClick = if (stale) onBackupNow else onOpenUploads,
+                modifier = Modifier.minTouch(),
+            ) { Text(if (stale) "Back up" else "Review") }
         }
-
-        Spacer(Modifier.height(Spacing.lg))
-
-        SyncLine(
-            running = running,
-            pending = pending,
-            job = job,
-            lastBackupAt = lastBackupAt,
-            onBackupNow = onBackupNow,
-        )
-    }
-}
-
-/** Equal columns, so the three figures share one baseline and one rhythm. */
-@Composable
-private fun RowScope.Stat(value: String, label: String, modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(
-            text = value,
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-            maxLines = 2,
-        )
     }
 }
 
 @Composable
-private fun StatDivider() {
-    Box(
-        Modifier
-            .padding(horizontal = Spacing.sm)
-            .width(1.dp)
-            .height(28.dp)
-            .background(MaterialTheme.colorScheme.outlineVariant)
-    )
-}
-
-/**
- * Sync status. While a transfer is live it names the file and the measured rate;
- * otherwise it reports what is waiting and when the last run finished.
- */
-@Composable
-private fun SyncLine(
-    running: Boolean,
-    pending: Int,
-    job: UploadTracker.Job?,
-    lastBackupAt: Long,
-    onBackupNow: () -> Unit,
+private fun RecentTile(
+    item: MediaItem,
+    list: List<MediaItem>,
+    onClick: () -> Unit,
 ) {
-    val shape = RoundedCornerShape(Radii.control)
-    val interaction = remember { MutableInteractionSource() }
-    val (icon, tint, text) = when {
-        job != null -> Triple(
-            Icons.Outlined.Sync,
-            MaterialTheme.colorScheme.primary,
-            buildString {
-                append("Sending ${job.displayName}")
-                if (job.bytesPerSecond > 0L) append(" · ${formatBytes(job.bytesPerSecond)}/s")
-            },
-        )
-        running -> Triple(
-            Icons.Outlined.Sync,
-            MaterialTheme.colorScheme.primary,
-            "Checking for new photos",
-        )
-        pending > 0 -> Triple(
-            Icons.Outlined.CloudOff,
-            MaterialTheme.colorScheme.onSurfaceVariant,
-            "$pending waiting to upload",
-        )
-        lastBackupAt > 0L -> Triple(
-            Icons.Outlined.CloudDone,
-            MaterialTheme.colorScheme.primary,
-            "Everything is backed up, last run ${relativeTime(lastBackupAt / 1000)}",
-        )
-        else -> Triple(
-            Icons.Outlined.CloudOff,
-            MaterialTheme.colorScheme.onSurfaceVariant,
-            "No backup has run yet",
-        )
-    }
-    Row(
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(Radii.tile),
+        tonalElevation = Elevation.card,
         modifier = Modifier
-            .fillMaxWidth()
-            .pressFeedback(interaction)
-            .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .clickable(interactionSource = interaction, indication = null, onClick = onBackupNow)
-            .padding(horizontal = Spacing.md, vertical = Spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = tint,
-            modifier = Modifier.size(18.dp),
-        )
-        Spacer(Modifier.width(Spacing.sm))
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
-        Text(
-            text = when {
-                job != null -> "${(job.fraction * 100).toInt()}%"
-                running -> "Running"
-                else -> "Back up"
-            },
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.primary,
-        )
-    }
-}
-
-/** Horizontal card for the recent rail: thumbnail over its capture date. */
-@Composable
-private fun RecentCard(item: MediaItem, onClick: () -> Unit) {
-    val shape = RoundedCornerShape(Radii.card)
-    val interaction = remember { MutableInteractionSource() }
-    Column(
-        modifier = Modifier
-            .width(132.dp)
-            .pressFeedback(interaction)
-            .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
-            .padding(Spacing.xs),
+            .aspectRatio(1f)
+            .semantics { contentDescription = item.displayName },
     ) {
         Thumb(
             fileId = item.remoteId ?: "",
-            kind = if (item.isVideo) DfcViewModel.Kind.VIDEO else DfcViewModel.Kind.IMAGE,
+            kind = if (item.isVideo) com.dfc.mobile.ui.DfcViewModel.Kind.VIDEO
+            else com.dfc.mobile.ui.DfcViewModel.Kind.IMAGE,
             name = item.displayName,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(96.dp)
-                .clip(RoundedCornerShape(Radii.control)),
-        )
-        Spacer(Modifier.height(Spacing.sm))
-        Text(
-            text = item.displayName,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(horizontal = Spacing.xs),
-        )
-        Text(
-            text = formatBytes(item.size),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            modifier = Modifier.padding(horizontal = Spacing.xs, vertical = Spacing.xs),
+            localId = item.id,
+            modifier = Modifier.fillMaxSize(),
         )
     }
 }
 
-/** First-run guidance: says what will happen and how to start it. */
 @Composable
-private fun EmptyHomeCard(
-    ui: DfcViewModel.Ui,
-    onBackupNow: () -> Unit,
-    onOpenUploads: () -> Unit,
+private fun StorageSummary(
+    filesCount: Int?,
+    totalBytes: Long?,
+    error: String?,
+    onOpenFiles: () -> Unit,
+    onOpenPhotos: () -> Unit,
 ) {
-    val shape = RoundedCornerShape(Radii.card)
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .padding(Spacing.lg),
-    ) {
-        Text(
-            text = if (ui.pending > 0) "Ready to send ${ui.pending} items" else "Ready for the first backup",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        Spacer(Modifier.height(Spacing.xs))
-        Text(
-            text = if (ui.pending > 0) {
-                "Backups run every 15 minutes on Wi-Fi. Start one now to send them immediately."
-            } else {
-                "Allow photo access and the next run will index this phone and upload what it finds."
-            },
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(Spacing.md))
-        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-            PrimaryButton(text = "Back up now", onClick = onBackupNow)
-            GhostButton(text = "View uploads", onClick = onOpenUploads)
+    DfcCard(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.padding(Spacing.md),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = "On your drive",
+                    style = currentType.section,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = when {
+                        error != null -> "Storage totals unavailable"
+                        filesCount == null -> "Reading…"
+                        else -> "${formatBytes(totalBytes ?: 0L)} across $filesCount files"
+                    },
+                    style = currentType.meta,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            androidx.compose.material3.TextButton(
+                onClick = onOpenFiles,
+                modifier = Modifier.minTouch(),
+            ) { Text("Files") }
+            androidx.compose.material3.TextButton(
+                onClick = onOpenPhotos,
+                modifier = Modifier.minTouch(),
+            ) { Text("Photos") }
         }
     }
 }
 
+/** Section heading used inside scrolling pages. */
 @Composable
-private fun NotConnectedCard(onOpenSettings: () -> Unit) {
-    val shape = RoundedCornerShape(Radii.card)
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .padding(Spacing.lg),
-    ) {
-        Text(
-            text = "No server connected",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        Spacer(Modifier.height(Spacing.xs))
-        Text(
-            text = "Add the server address and a write token in Settings, then backups can start.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(Spacing.md))
-        PrimaryButton(text = "Open settings", onClick = onOpenSettings)
-    }
+fun SectionHeader(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text = text,
+        style = currentType.section,
+        color = MaterialTheme.colorScheme.onSurface,
+        modifier = modifier.padding(top = Spacing.xs, bottom = Spacing.xs),
+    )
 }
 
-/** Time-of-day greeting. Real clock, no invented personalisation. */
-private fun greeting(): String {
-    val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
-    return when {
-        hour < 5 -> "Working late"
-        hour < 12 -> "Good morning"
-        hour < 18 -> "Good afternoon"
-        else -> "Good evening"
-    }
-}
+/** 48dp minimum for a text action inside a row. */
+private fun Modifier.minTouch(): Modifier =
+    this.size(48.dp)

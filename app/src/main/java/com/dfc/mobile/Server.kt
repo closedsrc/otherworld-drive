@@ -1,11 +1,13 @@
 package com.dfc.mobile
 
 /**
- * The one drive this build talks to. It is compiled in deliberately: this is a
- * single-server companion app, so there is no address to type at setup and no
- * way to point a phone at the wrong host. Moving the backend is a rebuild —
- * as long as this hostname keeps resolving, the app keeps working.
+ * The drive this app talks to. The default is this product's hosted drive;
+ * a self-hosted instance can be entered on the setup screen, and the choice
+ * is stored in prefs so the app can be pointed at any DFC server without a
+ * rebuild.
  */
 object Server {
-    const val BASE_URL = "https://drive-api.otherworld.bond"
+    const val DEFAULT_BASE_URL = "https://drive-api.otherworld.bond"
+
+    fun baseUrl(prefs: Prefs): String = prefs.serverUrl.ifEmpty { DEFAULT_BASE_URL }
 }

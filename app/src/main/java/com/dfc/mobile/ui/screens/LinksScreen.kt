@@ -7,7 +7,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -38,6 +38,7 @@ import com.dfc.mobile.ui.components.EmptyState
 import com.dfc.mobile.ui.components.SectionHeader
 import com.dfc.mobile.ui.theme.Radii
 import com.dfc.mobile.ui.theme.Spacing
+import com.dfc.mobile.ui.theme.currentType
 
 /**
  * Public links, which is the sharing the server actually implements: one link
@@ -56,9 +57,11 @@ fun LinksScreen(
     LaunchedEffect(Unit) { onRefresh() }
 
     LazyColumn(
-        // Full-screen overlay: pads its own inset, same as Setup and Preview.
-        modifier = modifier.statusBarsPadding(),
-        contentPadding = PaddingValues(bottom = Spacing.navClearance),
+        // Full-screen overlay: pads its own insets, same as Setup and Preview,
+        // and has no bottom bar to clear, so the old navClearance here was 97dp
+        // of dead space.
+        modifier = modifier.statusBarsPadding().navigationBarsPadding(),
+        contentPadding = PaddingValues(bottom = Spacing.lg),
     ) {
         item(key = "bar") {
             Row(
@@ -137,7 +140,7 @@ private fun ShareRow(share: DfcApi.Share, onRevoke: () -> Unit) {
         Column(Modifier.weight(1f)) {
             Text(
                 text = share.fileName.ifBlank { "Untitled file" },
-                style = MaterialTheme.typography.bodyLarge,
+                style = currentType.body,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -149,7 +152,7 @@ private fun ShareRow(share: DfcApi.Share, onRevoke: () -> Unit) {
                     append("  ·  ")
                     append("${share.downloads} downloads")
                 },
-                style = MaterialTheme.typography.labelSmall,
+                style = currentType.meta,
                 color = if (share.expired) MaterialTheme.colorScheme.error
                 else MaterialTheme.colorScheme.onSurfaceVariant,
             )
