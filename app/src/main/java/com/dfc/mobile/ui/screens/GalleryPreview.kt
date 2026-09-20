@@ -1,7 +1,14 @@
 package com.dfc.mobile.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculatePan
@@ -13,6 +20,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -21,20 +29,19 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Link
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -43,43 +50,40 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import com.dfc.mobile.LocalThumbs
 import com.dfc.mobile.ThumbLoader
+import com.dfc.mobile.ui.components.Thumb
 import com.dfc.mobile.ui.components.minTouchSize
 import com.dfc.mobile.ui.formatBytes
+import com.dfc.mobile.ui.fullDateLabel
 import com.dfc.mobile.ui.theme.Spacing
 import com.dfc.mobile.ui.theme.currentType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.changedToUp
-import androidx.compose.foundation.clickable
-
-import com.dfc.mobile.ui.components.Thumb
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.core.net.toUri
-import androidx.compose.foundation.Image
 
 /**
- * The viewer, rebuilt.
+ * The viewer: full-bleed, black, and immersive.
  *
- * The old one was a trap: the zoom handler swallowed single-finger drags even at
- * 1x, so the pager never received them and "1 of 5" stayed "1 of 5" no matter
- * how hard you swiped. There were no actions at all — no share, no download, no
- * delete, no details — and a failed decode showed an eternal spinner.
- *
- * Now: gestures are handed off correctly (one finger at 1x pages, pinch or a
- * drag while zoomed transforms), the chrome carries the full action set, and
- * loading, error, and zoom states are all explicit and announced.
+ * Three things changed from the version this replaces. The chrome fades out —
+ * tap the photo and the top bar, action row and caption all go, leaving just
+ * the image; tap again and they return. The top bar carries the date the photo
+ * was taken rather than a filename and a "3 of 47" counter, because that is
+ * what a person is looking for when they are scrolling back through a life.
+ * And the pager indicator is a row of dots at the top of the screen, so the
+ * count is legible at a glance instead of being a line of text competing with
+ * the picture.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -98,105 +102,195 @@ fun GalleryPreview(
         initialPage = startIndex.coerceIn(0, items.lastIndex),
         pageCount = { items.size },
     )
-    val context = LocalContext.current
     var zoomed by remember { mutableStateOf(false) }
+    var chromeVisible by remember { mutableStateOf(true) }
 
-    // Back closes the viewer; it used to exit the whole app from here.
     androidx.activity.compose.BackHandler(enabled = true) {
         if (zoomed) zoomed = false else onClose()
     }
 
+    // A new page means a new photograph: bring the chrome back so its date is
+    // readable without a tap.
+    LaunchedEffect(pager.currentPage) { chromeVisible = true }
+
     Box(modifier.fillMaxSize().background(Color.Black)) {
         HorizontalPager(state = pager, modifier = Modifier.fillMaxSize()) { page ->
             val item = items[page]
-            if (item.isVideo) {
-                ViewerVideoPane(item = item)
-            } else {
-                ZoomableImage(
-                    item = item,
-                    onZoomChange = { zoomed = it > 1f },
-                )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable(
+                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                        indication = null,
+                    ) { chromeVisible = !chromeVisible },
+            ) {
+                if (item.isVideo) {
+                    ViewerVideoPane(item = item)
+                } else {
+                    ZoomableImage(item = item, onZoomChange = { zoomed = it > 1f })
+                }
             }
         }
 
-        // Top chrome: identity and the count, over a scrim so white text is
-        // readable on a bright photo.
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Color.Black.copy(alpha = 0.45f))
-                .statusBarsPadding()
-                .padding(horizontal = Spacing.sm, vertical = Spacing.sm),
-            verticalAlignment = Alignment.CenterVertically,
+        // ---- top chrome: date, count, close --------------------------------
+        AnimatedVisibility(
+            visible = chromeVisible,
+            enter = fadeIn() + slideInVertically { -it },
+            exit = fadeOut() + slideOutVertically { -it },
+            modifier = Modifier.align(Alignment.TopCenter),
         ) {
-            IconButton(onClick = onClose, modifier = Modifier.minTouchSize()) {
-                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Close viewer", tint = Color.White)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        Brush.verticalGradient(
+                            0f to Color.Black.copy(alpha = 0.72f),
+                            1f to Color.Transparent,
+                        )
+                    )
+                    .statusBarsPadding()
+                    .padding(horizontal = Spacing.sm, vertical = Spacing.sm),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(CircleShape)
+                            .clickable(onClick = onClose),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Outlined.ArrowBack,
+                            contentDescription = "Close viewer",
+                            tint = Color.White,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
+                    Column(
+                        Modifier
+                            .weight(1f)
+                            .padding(start = Spacing.xs),
+                    ) {
+                        val current = items[pager.currentPage]
+                        Text(
+                            text = if (current.dateTaken > 0) fullDateLabel(current.dateTaken)
+                            else current.displayName,
+                            style = currentType.item,
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = "${pager.currentPage + 1} of ${items.size}",
+                            style = currentType.meta,
+                            color = Color.White.copy(alpha = 0.7f),
+                        )
+                    }
+                }
+                if (items.size > 1) {
+                    PagerDots(
+                        count = items.size,
+                        current = pager.currentPage,
+                        modifier = Modifier
+                            .align(Alignment.CenterHorizontally)
+                            .padding(top = Spacing.sm),
+                    )
+                }
             }
-            Column(Modifier.weight(1f)) {
+        }
+
+        // ---- bottom chrome: actions ---------------------------------------
+        AnimatedVisibility(
+            visible = chromeVisible,
+            enter = fadeIn() + slideInVertically { it },
+            exit = fadeOut() + slideOutVertically { it },
+            modifier = Modifier.align(Alignment.BottomCenter),
+        ) {
+            val current = items[pager.currentPage]
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        Brush.verticalGradient(
+                            0f to Color.Transparent,
+                            0.45f to Color.Black.copy(alpha = 0.65f),
+                            1f to Color.Black.copy(alpha = 0.9f),
+                        )
+                    )
+                    .navigationBarsPadding()
+                    .padding(horizontal = Spacing.md, vertical = Spacing.md),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                ) {
+                    ViewerAction(Icons.Outlined.Link, "Share link") { onShare(current) }
+                    ViewerAction(Icons.Outlined.Download, "Save to device") { onDownload(current) }
+                    ViewerAction(Icons.Outlined.Info, "Details") { onDetails(current) }
+                    ViewerAction(Icons.Outlined.Delete, "Delete") { onDelete(current) }
+                }
+                Spacer(Modifier.height(Spacing.sm))
                 Text(
-                    text = items[pager.currentPage].displayName,
-                    style = currentType.item,
-                    color = Color.White,
+                    text = buildString {
+                        append(current.displayName)
+                        append("  ·  ")
+                        append(formatBytes(current.size))
+                    },
+                    style = currentType.meta,
+                    color = Color.White.copy(alpha = 0.6f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = "${pager.currentPage + 1} of ${items.size}",
-                    style = currentType.meta,
-                    color = Color.White.copy(alpha = 0.75f),
+                    modifier = Modifier.align(Alignment.CenterHorizontally),
                 )
             }
         }
+    }
+}
 
-        // Bottom chrome: the actions that were missing entirely.
-        val current = items[pager.currentPage]
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .background(
-                    Brush.verticalGradient(
-                        0f to Color.Transparent,
-                        0.4f to Color.Black.copy(alpha = 0.6f),
-                        1f to Color.Black.copy(alpha = 0.85f),
-                    )
-                )
-                .navigationBarsPadding()
-                .padding(horizontal = Spacing.md, vertical = Spacing.sm),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
-            ) {
-                ViewerAction(Icons.Outlined.Link, "Share link") { onShare(current) }
-                ViewerAction(Icons.Outlined.Download, "Save to device") { onDownload(current) }
-                ViewerAction(Icons.Outlined.Info, "Details") { onDetails(current) }
-                ViewerAction(Icons.Outlined.Delete, "Delete") { onDelete(current) }
-            }
-            Text(
-                text = buildString {
-                    append(formatBytes(current.size))
-                    if (current.dateTaken > 0) {
-                        append("  ·  ")
-                        append(com.dfc.mobile.ui.fullDateLabel(current.dateTaken))
-                    }
-                },
-                style = currentType.meta,
-                color = Color.White.copy(alpha = 0.75f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.align(Alignment.CenterHorizontally),
+/**
+ * Dots for the pager. Capped at a window of nearby pages so a library of a
+ * thousand photos does not try to draw a thousand dots.
+ */
+@Composable
+private fun PagerDots(count: Int, current: Int, modifier: Modifier = Modifier) {
+    if (count > 12) return
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        repeat(count) { i ->
+            Box(
+                Modifier
+                    .size(if (i == current) 6.dp else 4.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (i == current) Color.White
+                        else Color.White.copy(alpha = 0.35f)
+                    ),
             )
         }
     }
 }
 
+/** One labelled action in the viewer's bottom bar. */
 @Composable
-private fun ViewerAction(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
-    IconButton(onClick = onClick, modifier = Modifier.minTouchSize()) {
-        Icon(icon, contentDescription = label, tint = Color.White)
+private fun ViewerAction(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    onClick: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = Spacing.sm, vertical = Spacing.xs),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Icon(icon, contentDescription = label, tint = Color.White, modifier = Modifier.size(22.dp))
+        Spacer(Modifier.height(4.dp))
+        Text(label, style = currentType.meta, color = Color.White.copy(alpha = 0.85f))
     }
-    Spacer(Modifier.width(Spacing.xs))
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -241,7 +335,7 @@ private fun ZoomableImage(
                 awaitEachGesture {
                     awaitFirstDown(requireUnconsumed = false)
                     do {
-                        val event = awaitPointerEvent()
+                        val event = awaitPointerEvent(PointerEventPass.Main)
                         val zoomChange = event.calculateZoom()
                         val panChange = event.calculatePan()
                         val zooming = event.changes.size > 1 || zoomChange != 1f
@@ -273,8 +367,7 @@ private fun ZoomableImage(
                     .graphicsLayer(
                         scaleX = scale, scaleY = scale,
                         translationX = offsetX, translationY = offsetY,
-                    )
-                    .padding(vertical = Spacing.lg),
+                    ),
             )
             failed -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(
@@ -309,27 +402,15 @@ data class ViewerItem(
     val localId: Long? = null,
 )
 
-/** Back handling lives with the viewer so it never exits the app. */
-@Composable
-private fun BackHandler(enabled: Boolean, onBack: () -> Unit) {
-    androidx.activity.compose.BackHandler(enabled = enabled, onBack = onBack)
-}
-
 /**
  * Video pane. Videos play through the platform player over the drive's
  * range-capable stream, so seeking and buffering behave the way the device
- * already does — a Compose-rendered frame loop would fight the platform for no
- * gain. Until the user taps, a poster frame keeps the pane from being a black
- * rectangle.
+ * already does.
  */
 @Composable
 private fun ViewerVideoPane(item: ViewerItem) {
     val context = LocalContext.current
     var preparing by remember(item.remoteId) { mutableStateOf(true) }
-
-    DisposableEffect(item.remoteId) {
-        onDispose { }
-    }
 
     Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
         Thumb(
@@ -342,7 +423,7 @@ private fun ViewerVideoPane(item: ViewerItem) {
         if (preparing) {
             Box(
                 modifier = Modifier
-                    .size(64.dp)
+                    .size(72.dp)
                     .background(Color.Black.copy(alpha = 0.45f), CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
@@ -350,7 +431,7 @@ private fun ViewerVideoPane(item: ViewerItem) {
                     imageVector = Icons.Filled.PlayArrow,
                     contentDescription = "Play video",
                     tint = Color.White,
-                    modifier = Modifier.size(30.dp),
+                    modifier = Modifier.size(34.dp),
                 )
             }
         }

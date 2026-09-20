@@ -4,6 +4,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -41,7 +42,10 @@ import androidx.compose.material.icons.outlined.ViewList
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import com.dfc.mobile.ui.components.kindIcon
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -227,6 +231,16 @@ private fun sortEntries(
 
 // ---------------------------------------------------------------- top bar
 
+/**
+ * The folder top bar.
+ *
+ * It used to carry five icon buttons — sort, layout, trash, new folder,
+ * reload — which on a 360dp phone is five 48dp targets filling the entire
+ * header and pushing the folder name into an ellipsis. That is a toolbar for a
+ * desktop app. Here the folder name owns the row, one visible action is the
+ * thing you actually do (new folder), and sort / layout / reload / trash live
+ * behind an overflow menu.
+ */
 @Composable
 private fun FilesTopBar(
     path: List<RemoteFile>,
@@ -258,49 +272,75 @@ private fun FilesTopBar(
         } else {
             Spacer(Modifier.width(Spacing.sm))
         }
-        Text(
-            text = path.lastOrNull()?.name ?: "Drive",
-            style = currentType.title,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = path.lastOrNull()?.name ?: "Drive",
+                style = currentType.title,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (path.size > 1) {
+                Text(
+                    text = path.dropLast(1).joinToString(" / ") { it.name },
+                    style = currentType.meta,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
         if (loading) {
             androidx.compose.material3.CircularProgressIndicator(
                 modifier = Modifier.size(18.dp), strokeWidth = 2.dp,
             )
         }
+        IconButton(onClick = onCreateFolder, modifier = Modifier.minTouchSize()) {
+            Icon(Icons.Outlined.CreateNewFolder, contentDescription = "New folder")
+        }
         Box {
             IconButton(onClick = { onSortMenu(true) }, modifier = Modifier.minTouchSize()) {
-                Icon(Icons.Outlined.Sort, contentDescription = "Sort")
+                Icon(Icons.Outlined.MoreVert, contentDescription = "More actions")
             }
             DropdownMenu(expanded = sortMenu, onDismissRequest = { onSortMenu(false) }) {
+                DropdownMenuItem(
+                    text = { Text("Reload") },
+                    leadingIcon = { Icon(Icons.Outlined.Refresh, contentDescription = null) },
+                    onClick = { onSortMenu(false); onRefresh() },
+                )
+                DropdownMenuItem(
+                    text = { Text(if (layout == FilesLayout.GRID) "List view" else "Grid view") },
+                    leadingIcon = {
+                        Icon(
+                            if (layout == FilesLayout.GRID) Icons.Outlined.ViewList
+                            else Icons.Outlined.GridView,
+                            contentDescription = null,
+                        )
+                    },
+                    onClick = { onSortMenu(false); onToggleLayout() },
+                )
+                DropdownMenuItem(
+                    text = { Text("Trash") },
+                    leadingIcon = { Icon(Icons.Outlined.Restore, contentDescription = null) },
+                    onClick = { onSortMenu(false); onOpenTrash() },
+                )
+                androidx.compose.material3.HorizontalDivider()
+                Text(
+                    text = "Sort by",
+                    style = currentType.meta,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.xs),
+                )
                 SortKey.entries.forEach { key ->
                     DropdownMenuItem(
                         text = { Text(key.label) },
-                        onClick = { onSortChange(key) },
+                        onClick = { onSortChange(key); onSortMenu(false) },
                         leadingIcon = if (key == sort) {
-                            { Icon(Icons.Outlined.CheckCircle, contentDescription = "Current sort") }
+                            { Icon(Icons.Outlined.Check, contentDescription = "Current sort") }
                         } else null,
                     )
                 }
             }
-        }
-        IconButton(onClick = onToggleLayout, modifier = Modifier.minTouchSize()) {
-            Icon(
-                if (layout == FilesLayout.GRID) Icons.Outlined.ViewList else Icons.Outlined.GridView,
-                contentDescription = "Switch to ${if (layout == FilesLayout.GRID) "list" else "grid"} view",
-            )
-        }
-        IconButton(onClick = onOpenTrash, modifier = Modifier.minTouchSize()) {
-            Icon(Icons.Outlined.Restore, contentDescription = "Open trash")
-        }
-        IconButton(onClick = onCreateFolder, modifier = Modifier.minTouchSize()) {
-            Icon(Icons.Outlined.CreateNewFolder, contentDescription = "New folder")
-        }
-        IconButton(onClick = onRefresh, modifier = Modifier.minTouchSize()) {
-            Icon(Icons.Outlined.Restore, contentDescription = "Reload folder")
         }
     }
 }
@@ -382,8 +422,14 @@ private fun FolderGrid(
     val w = windowSize
     BoxWithConstraints(Modifier.fillMaxSize()) {
         // Real density: column width drives the count instead of a fixed 3.
-        val minCol = if (w.isCompact) 104.dp else 132.dp
-        val count = maxOf(2, (maxWidth / minCol).toInt())
+        // The floor is three columns, so a folder tile is never narrower than
+        // the photo tiles on the library screen — the two grids are one app.
+        val minCol = when {
+            w.isCompact -> 168.dp
+            w.isMedium -> 150.dp
+            else -> 132.dp
+        }
+        val count = maxOf(3, (maxWidth / minCol).toInt())
         LazyVerticalGrid(
             columns = GridCells.Fixed(count),
             contentPadding = PaddingValues(
@@ -411,6 +457,17 @@ private fun FolderGrid(
     }
 }
 
+/**
+ * One grid tile.
+ *
+ * The old tile was a filled grey card with a 96dp dead zone holding a small
+ * outline glyph — four identical grey rectangles per row, folder and PDF
+ * indistinguishable, which is exactly the "card wall" that makes a file browser
+ * unreadable. Here the *glyph* is the tile: a folder gets a filled folder mark
+ * on a soft accent square, media gets a real thumbnail, and the name sits under
+ * it. No container, so the eye reads a field of objects instead of a table of
+ * boxes.
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun GridTile(
@@ -422,73 +479,60 @@ fun GridTile(
     onLongClick: () -> Unit,
 ) {
     val isMedia = kind == DfcViewModel.Kind.IMAGE || kind == DfcViewModel.Kind.VIDEO
-    Surface(
+    val isFolder = kind == DfcViewModel.Kind.FOLDER
+    Column(
         modifier = Modifier
             .semantics { contentDescription = file.name }
             .combinedClickable(onClick = onClick, onLongClick = onLongClick),
-        shape = RoundedCornerShape(Radii.tile),
-        tonalElevation = if (selected) 4.dp else 0.dp,
-        color = MaterialTheme.colorScheme.surfaceContainer,
     ) {
-        Box(Modifier.fillMaxWidth()) {
-            Column {
-                // Fixed-height media area: the old grid mixed a taller PDF card
-                // into a row of folder cards because each tile sized itself.
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(96.dp)
-                        .clip(RoundedCornerShape(Radii.tile)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (isMedia) {
-                        Thumb(
-                            fileId = file.id, kind = kind, name = file.name,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    } else {
-                        Icon(
-                            imageVector = kindIcon(kind, file.name),
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(28.dp),
-                        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .clip(RoundedCornerShape(Radii.card))
+                .background(
+                    when {
+                        selected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
+                        isFolder -> MaterialTheme.colorScheme.primaryContainer
+                        else -> MaterialTheme.colorScheme.surfaceContainerHigh
                     }
-                    if (selected) {
-                        Box(
-                            Modifier
-                                .fillMaxSize()
-                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)),
-                        )
-                    }
-                }
-                Column(Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.sm)) {
-                    Text(
-                        text = file.name,
-                        style = currentType.meta,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = if (file.isDir) "Folder" else formatBytes(file.size),
-                        style = currentType.meta,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                    )
-                }
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (isMedia) {
+                Thumb(
+                    fileId = file.id, kind = kind, name = file.name,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                Icon(
+                    imageVector = kindIcon(kind, file.name),
+                    contentDescription = null,
+                    tint = if (isFolder) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(if (isFolder) 34.dp else 30.dp),
+                )
             }
             if (selecting) {
                 Box(Modifier.align(Alignment.TopEnd).padding(Spacing.xs)) {
-                    Icon(
-                        if (selected) Icons.Outlined.CheckCircle else Icons.Outlined.Circle,
-                        contentDescription = if (selected) "Selected" else "Not selected",
-                        tint = if (selected) MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color(0x99FFFFFF),
-                        modifier = Modifier.size(20.dp),
-                    )
+                    com.dfc.mobile.ui.components.SelectionDot(selected = selected)
                 }
             }
         }
+        Spacer(Modifier.height(Spacing.xs))
+        Text(
+            text = file.name,
+            style = currentType.meta,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = if (file.isDir) "Folder" else formatBytes(file.size),
+            style = currentType.meta,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+        )
     }
 }
 

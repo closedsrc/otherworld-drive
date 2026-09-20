@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.ErrorOutline
@@ -51,13 +52,15 @@ import com.dfc.mobile.ui.theme.Spacing
 import com.dfc.mobile.ui.theme.currentType
 
 /**
- * Uploads exists because a backup you cannot see is a backup you do not trust.
- * Everything here is measured: bytes move from the socket to the tracker, and
- * the waiting list is the local index's own pending rows.
+ * Uploads is a pushed detail, not a tab. It opens from the backup line on the
+ * library, shows the live transfer and the queue, and closes back to the
+ * photographs. Keeping it out of the bar is the point: a backup you check once
+ * a week should not hold a quarter of the navigation.
  */
 @Composable
 fun UploadsScreen(
     ui: DfcViewModel.Ui,
+    onBack: () -> Unit,
     onBackupNow: () -> Unit,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
@@ -68,17 +71,37 @@ fun UploadsScreen(
 
     LazyColumn(
         modifier = modifier,
-        contentPadding = PaddingValues(bottom = Spacing.navClearance),
+        contentPadding = PaddingValues(bottom = Spacing.lg),
     ) {
         item(key = "title") {
-            ScreenTitle(
-                title = "Uploads",
-                subtitle = when {
-                    running -> "Backup running now"
-                    ui.pending > 0 -> "${ui.pending} waiting in the queue"
-                    else -> "Nothing waiting"
-                },
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = Spacing.sm, end = Spacing.md, top = Spacing.md, bottom = Spacing.sm),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                com.dfc.mobile.ui.BarIcon(
+                    icon = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Back",
+                    onClick = onBack,
+                )
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = "Uploads",
+                        style = com.dfc.mobile.ui.theme.currentType.title,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = when {
+                            running -> "Backup running now"
+                            ui.pending > 0 -> "${ui.pending} waiting in the queue"
+                            else -> "Nothing waiting"
+                        },
+                        style = com.dfc.mobile.ui.theme.currentType.meta,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
         }
 
         // Live transfer. Only rendered while something is actually moving.
@@ -95,9 +118,13 @@ fun UploadsScreen(
             item(key = "hdr-queued") {
                 Spacer(Modifier.height(Spacing.lg))
                 Box(Modifier.padding(horizontal = Spacing.md)) {
+                    // The batch size is an implementation constant. It used to
+                    // be interpolated into user copy ("Sent in batches of 40 per
+                    // run"), which asks the user to reason about worker
+                    // scheduling to trust a backup.
                     SectionHeader(
-                        title = "Queued",
-                        caption = "Sent in batches of ${com.dfc.mobile.backup.BackupWorker.MAX_PER_RUN} per run",
+                        title = "Waiting to back up",
+                        caption = "Sends on its own when the connection allows",
                     )
                 }
             }

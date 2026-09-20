@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -70,10 +71,10 @@ import com.dfc.mobile.ui.itemCount
 import com.dfc.mobile.ui.pressFeedback
 import com.dfc.mobile.ui.theme.Radii
 import com.dfc.mobile.ui.theme.Spacing
+import com.dfc.mobile.ui.theme.currentType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
-import com.dfc.mobile.ui.theme.currentType
 
 /** Index states the library grid reasons about. */
 private const val STATE_PENDING = 0
@@ -85,9 +86,13 @@ private const val GATE_POLL_MS = 4_000L
 
 /**
  * The library: everything on this phone, newest first, under the date it was
- * taken. This is the app's default destination, because "what is on my phone and
- * is it safe" is the question the app exists to answer. The drive's own contents
- * live on the Files tab, which is a different question.
+ * taken. This is the app's start destination, because "what is on my phone and
+ * is it safe" is the question the app exists to answer.
+ *
+ * The chrome is deliberately thin. A photo product should open onto photographs,
+ * not onto three stacked bands of status furniture; the backup state is one
+ * slim line that expands into the transfer sheet on tap, and the filters are a
+ * single quiet row.
  */
 @Composable
 fun PhotosScreen(
@@ -110,7 +115,6 @@ fun PhotosScreen(
     var selected by remember { mutableStateOf(setOf<Long>()) }
     val selecting = selected.isNotEmpty()
 
-    // Newest first, so a filter never has to re-sort: the index already ordered it.
     val visible = remember(ui.timeline, filter) {
         when (filter) {
             LibraryFilter.ALL -> ui.timeline
@@ -125,8 +129,6 @@ fun PhotosScreen(
 
     val photoCount = ui.timeline.count { !it.isVideo }
     val videoCount = ui.timeline.count { it.isVideo }
-    // Counted from the same list the filter reads, so the chip can never promise
-    // a number the grid does not deliver.
     val waitingCount = ui.timeline.count {
         it.state == STATE_PENDING || it.state == STATE_FAILED
     }
@@ -151,22 +153,19 @@ fun PhotosScreen(
                     onShareLink = { shareable?.remoteId?.let(onShareId) },
                 )
             } else {
-                PhotosTopBar(
-                    ui = ui,
-                    onOpenSearch = onOpenSearch,
-                )
+                PhotosTopBar(ui = ui, onOpenSearch = onOpenSearch)
             }
         }
 
-        if (ui.configured) {
-            BackupStrip(
+        if (!ui.configured) {
+            SetupStrip(onOpenSetup = onOpenSetup)
+        } else if (ui.pending > 0 || ui.lastBackupAt > 0L) {
+            BackupLine(
                 pending = ui.pending,
                 lastBackupAt = ui.lastBackupAt,
                 onBackupNow = onBackupNow,
                 onOpenUploads = onOpenUploads,
             )
-        } else {
-            SetupStrip(onOpenSetup = onOpenSetup)
         }
 
         if (ui.timeline.isNotEmpty()) {
@@ -225,6 +224,7 @@ fun PhotosScreen(
                         else selected + item.id
                     },
                     bottomPadding = Spacing.navClearance,
+                    columns = com.dfc.mobile.ui.theme.windowSize.gridColumns,
                     header = if (filter == LibraryFilter.ALL && ui.albums.size >= 2) {
                         { AlbumStripSection(ui.albums, onOpenAlbum, onOpenAlbums) }
                     } else null,
@@ -234,27 +234,32 @@ fun PhotosScreen(
     }
 }
 
-/** Title, what the library holds, and the one action that is not a tab. */
+/**
+ * Title, what the library holds, and search. The title is the largest thing on
+ * the screen and the count sits under it as one muted line — the old header
+ * spent three lines ("Photos" / "5 items · 2 albums" / a backup card) before the
+ * first photograph appeared.
+ */
 @Composable
 private fun PhotosTopBar(ui: DfcViewModel.Ui, onOpenSearch: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = Spacing.md, end = Spacing.sm, top = Spacing.md, bottom = Spacing.sm),
+            .padding(start = Spacing.md, end = Spacing.sm, top = Spacing.lg, bottom = Spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
             Text(
                 text = "Photos",
-                style = currentType.title,
+                style = currentType.display,
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Text(
                 text = when {
                     ui.indexLoading && ui.timeline.isEmpty() -> "Reading this phone"
                     ui.timeline.isEmpty() -> "Nothing indexed yet"
-                    ui.albums.size >= 2 -> "${ui.timeline.size} items  ·  ${ui.albums.size} albums"
-                    else -> "${ui.timeline.size} items"
+                    ui.albums.size >= 2 -> "${itemCount(ui.timeline.size)}  ·  ${ui.albums.size} albums"
+                    else -> itemCount(ui.timeline.size)
                 },
                 style = currentType.meta,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -271,9 +276,8 @@ private fun PhotosTopBar(ui: DfcViewModel.Ui, onOpenSearch: () -> Unit) {
 }
 
 /**
- * The selection header. Only actions the server actually backs are offered: a run
- * can be started, and a link can be issued for a single file, because that is what
- * the share endpoint accepts.
+ * The selection header. Only actions the server actually backs are offered: a
+ * run can be started, and a link can be issued for a single file.
  */
 @Composable
 private fun PhotosSelectionBar(
@@ -318,16 +322,16 @@ private fun PhotosSelectionBar(
 }
 
 /**
- * Backup state for the whole library. The row opens the transfer detail and the
- * trailing label starts a run, which is why they are two targets rather than one.
+ * One slim line of backup state. It is a status, not a card: it collapses to a
+ * single row with a dot, a sentence and one action, and tapping it opens the
+ * transfer sheet where the detail lives.
  *
- * A pending count on its own says nothing about whether anything is wrong, so the
- * label names the condition the run is held on. WorkManager enforces those
- * conditions silently: without this, an app holding off on mobile data and an app
- * that is stuck look identical.
+ * A pending count on its own says nothing about whether anything is wrong, so
+ * the label names the condition the run is held on — without it, an app holding
+ * off on mobile data and an app that is stuck look identical.
  */
 @Composable
-private fun BackupStrip(
+private fun BackupLine(
     pending: Int,
     lastBackupAt: Long,
     onBackupNow: () -> Unit,
@@ -336,8 +340,6 @@ private fun BackupStrip(
     val running by UploadTracker.runActive.collectAsState()
     val job by UploadTracker.current.collectAsState()
     val context = LocalContext.current
-    // Polled rather than read once: the connection and the battery both change
-    // while this screen is open, and a stale reason is worse than none.
     val gate by produceState(BackupGate.READY, pending) {
         if (pending <= 0) return@produceState
         while (true) {
@@ -345,20 +347,12 @@ private fun BackupStrip(
             delay(GATE_POLL_MS)
         }
     }
-    val shape = RoundedCornerShape(Radii.control)
     val interaction = remember { MutableInteractionSource() }
 
-    val icon = when {
-        job != null || running -> Icons.Outlined.Sync
-        // Waiting on the network is not the same as waiting on the app, and the
-        // cloud-off glyph reads as the latter. Only a real block gets it.
-        pending > 0 -> if (gate == BackupGate.READY) Icons.Outlined.CloudQueue
-        else Icons.Outlined.CloudOff
-        else -> Icons.Outlined.CloudDone
-    }
-    val tint = when {
-        job != null || running -> MaterialTheme.colorScheme.primary
-        pending > 0 -> MaterialTheme.colorScheme.onSurfaceVariant
+    val busy = job != null || running
+    val dotColor = when {
+        busy -> MaterialTheme.colorScheme.primary
+        pending > 0 && gate != BackupGate.READY -> MaterialTheme.colorScheme.onSurfaceVariant
         else -> MaterialTheme.colorScheme.primary
     }
     val label = when {
@@ -367,14 +361,9 @@ private fun BackupStrip(
             if (job!!.bytesPerSecond > 0L) append("  ·  ${formatBytes(job!!.bytesPerSecond)}/s")
         }
         running -> "Checking for new photos"
-        pending > 0 -> "${itemCount(pending)}  ·  ${gate.waitingLabel}"
+        pending > 0 -> "${itemCount(pending)} ${gate.waitingLabel}"
         lastBackupAt > 0L -> "Everything is backed up"
         else -> "No backup has run yet"
-    }
-    val action = when {
-        job != null -> "${(job!!.fraction * 100).toInt()}%"
-        running -> "Running"
-        else -> "Back up"
     }
 
     Row(
@@ -382,18 +371,17 @@ private fun BackupStrip(
             .fillMaxWidth()
             .padding(horizontal = Spacing.md)
             .pressFeedback(interaction)
-            .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .clip(RoundedCornerShape(Radii.control))
             .clickable(interactionSource = interaction, indication = null, onClick = onOpenUploads)
-            .heightIn(min = 48.dp)
-            .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+            .heightIn(min = 40.dp)
+            .padding(horizontal = Spacing.sm, vertical = Spacing.xs),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = tint,
-            modifier = Modifier.size(18.dp),
+        Box(
+            Modifier
+                .size(8.dp)
+                .clip(CircleShape)
+                .background(dotColor),
         )
         Spacer(Modifier.width(Spacing.sm))
         Text(
@@ -404,24 +392,23 @@ private fun BackupStrip(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
-        // A real gap, not the weighted text running out, so a long status can
-        // never touch the action beside it.
-        Spacer(Modifier.width(Spacing.sm))
-        // The action keeps its own 44dp target inside the row.
-        Box(
-            modifier = Modifier
-                .heightIn(min = 48.dp)
-                .padding(horizontal = Spacing.sm)
-                .clickable(enabled = !running, onClick = onBackupNow),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = action,
-                style = currentType.meta,
-                color = if (running) MaterialTheme.colorScheme.onSurfaceVariant
-                else MaterialTheme.colorScheme.primary,
-                maxLines = 1,
-            )
+        if (!busy) {
+            Spacer(Modifier.width(Spacing.sm))
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(Radii.control))
+                    .clickable(onClick = onBackupNow)
+                    .heightIn(min = 32.dp)
+                    .padding(horizontal = Spacing.sm),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "Back up",
+                    style = currentType.meta,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                )
+            }
         }
     }
 }
@@ -492,9 +479,6 @@ private fun FilterChips(
         CountChip("Videos", videos, filter == LibraryFilter.VIDEOS) {
             onFilterChange(LibraryFilter.VIDEOS)
         }
-        // "Waiting", not "Not backed up": the four chips plus their counts have to
-        // fit a 360dp row, and the longer label ran off the screen mid-word. The
-        // backup strip above spells the state out in full.
         CountChip("Waiting", waiting, filter == LibraryFilter.PENDING) {
             onFilterChange(LibraryFilter.PENDING)
         }
@@ -503,18 +487,17 @@ private fun FilterChips(
 
 @Composable
 private fun CountChip(label: String, count: Int, selected: Boolean, onClick: () -> Unit) {
-    val shape = RoundedCornerShape(Radii.control)
+    val shape = RoundedCornerShape(50)
     Row(
         modifier = Modifier
             .clip(shape)
             .background(
                 if (selected) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.surfaceContainer
+                else MaterialTheme.colorScheme.surfaceContainerHigh
             )
             .clickable(onClick = onClick)
-            // 44dp rather than the ~33dp that text plus padding produced.
-            .heightIn(min = 48.dp)
-            .padding(horizontal = Spacing.sm),
+            .heightIn(min = 36.dp)
+            .padding(horizontal = Spacing.md),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(

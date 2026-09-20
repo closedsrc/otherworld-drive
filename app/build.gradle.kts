@@ -49,8 +49,8 @@ android {
         applicationId = "com.dfc.mobile"
         minSdk = 26
         targetSdk = 34
-        versionCode = 4
-        versionName = "3.1"
+        versionCode = 5
+        versionName = "3.2"
 
         // No credential is baked in. The device registers itself with the
         // server (password exchange, once) and stores its own token in

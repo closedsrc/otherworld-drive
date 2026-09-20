@@ -152,18 +152,18 @@ object Spacing {
     val lg = 24.dp
     val xl = 32.dp
 
-    /** The floating bar's own footprint: 81dp of content plus a 16dp gap. */
-    private val barFootprint = 97.dp
-
     /**
-     * Bottom padding that clears the floating bar. The navigation-bar inset is
-     * added at runtime because it is 0 on gesture navigation and 48dp on
-     * three-button navigation, and a fixed constant that fits one leaves the
-     * last row of a list underneath the bar on the other.
+     * Breathing room at the bottom of a scrolling screen.
+     *
+     * This used to be ~97dp because the navigation bar *floated over* the
+     * content and every list had to reserve the bar's own footprint plus the
+     * system inset. The bar is now a sibling in the layout — the content box
+     * ends where the bar begins — so the only thing left to reserve is a plain
+     * gutter. Keeping the old number would leave a dead band the height of a
+     * thumbnail under the last row of every grid.
      */
     val navClearance: Dp
-        @Composable get() = barFootprint +
-            WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+        @Composable get() = Spacing.md
 }
 
 /**

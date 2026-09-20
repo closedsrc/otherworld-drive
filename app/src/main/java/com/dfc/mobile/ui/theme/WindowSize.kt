@@ -22,18 +22,34 @@ data class WindowSize(
     val isMedium: Boolean get() = width == WindowClass.MEDIUM
     val isExpanded: Boolean get() = width == WindowClass.EXPANDED
 
-    /** Navigation rail replaces the bottom bar from MEDIUM up. */
-    val useRail: Boolean get() = !isCompact
+    /**
+     * A navigation rail replaces the bottom bar only on EXPANDED windows.
+     *
+     * This used to be `!isCompact`, so a 600dp portrait phone drew an 80dp
+     * vertical slab of navigation down the left of every screen — the single
+     * ugliest thing in the app, and a control no phone design uses. The bottom
+     * bar is correct up to tablet width; the rail is for tablets and unfolded
+     * foldables.
+     */
+    val useRail: Boolean get() = isExpanded
 
     /** Two-pane layouts (list + detail) only make sense on EXPANDED. */
     val useTwoPane: Boolean get() = isExpanded
 
-    /** Content column: full width on phone, capped and centred on larger. */
+    /**
+     * Content column: full width on phone, capped and centred on larger.
+     *
+     * The cap is well below the window classes' own breakpoints on purpose. A
+     * 1000dp row that reads "Albums ……………………… See all" is the same defect as
+     * the old stretched phone UI, only quieter: the heading and the thing it
+     * labels stop looking related. 840dp is about the widest a row of content
+     * can be before the eye loses the pairing.
+     */
     val maxContentWidth: Dp
         get() = when (width) {
             WindowClass.COMPACT -> Dp.Unspecified
             WindowClass.MEDIUM -> 720.dp
-            WindowClass.EXPANDED -> 1100.dp
+            WindowClass.EXPANDED -> 840.dp
         }
 
     /** Grid columns for photos/files. */

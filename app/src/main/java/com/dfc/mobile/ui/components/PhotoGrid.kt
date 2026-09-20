@@ -19,10 +19,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
@@ -54,7 +52,6 @@ import com.dfc.mobile.data.MediaItem
 import com.dfc.mobile.ui.DaySection
 import com.dfc.mobile.ui.DfcViewModel.Kind
 import com.dfc.mobile.ui.clockDuration
-import com.dfc.mobile.ui.itemCount
 import com.dfc.mobile.ui.theme.Radii
 import com.dfc.mobile.ui.theme.Spacing
 
@@ -68,8 +65,8 @@ private const val STATE_REMOVED = 3
 
 /**
  * Thumbnail for a photo or video that lives on this phone. Until the MediaStore
- * decode lands the cell shows the file-type glyph rather than an empty grey box,
- * which is the same rule the server-rendered [Thumb] follows.
+ * decode lands the cell shows a neutral surface — never a glyph that reads as
+ * "broken".
  */
 @Composable
 fun MediaThumb(item: MediaItem, modifier: Modifier = Modifier) {
@@ -91,22 +88,14 @@ fun MediaThumb(item: MediaItem, modifier: Modifier = Modifier) {
     } else {
         Box(
             modifier = modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = kindIcon(if (item.isVideo) Kind.VIDEO else Kind.IMAGE, item.displayName),
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(22.dp),
-            )
-        }
+        )
     }
 }
 
 /**
- * One square of the library. The photo is the cell; the only things drawn over it
- * are the two facts the grid cannot show by itself: how long a video runs, and
- * whether this item has reached the drive yet.
+ * One square of the library. The photo is the cell; the only things drawn over
+ * it are the two facts the grid cannot show by itself: how long a video runs,
+ * and whether this item has reached the drive yet.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -119,7 +108,7 @@ fun PhotoCell(
     modifier: Modifier = Modifier,
 ) {
     val scale by animateFloatAsState(
-        targetValue = if (selected) 0.92f else 1f,
+        targetValue = if (selected) 0.90f else 1f,
         animationSpec = tween(160),
         label = "photoCellScale",
     )
@@ -185,7 +174,7 @@ fun PhotoCell(
             Box(
                 Modifier
                     .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.28f))
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.30f))
             )
         }
         if (selecting) {
@@ -218,21 +207,17 @@ private fun CellBadge(modifier: Modifier = Modifier, content: @Composable () -> 
 }
 
 /**
- * A day in the timeline: the date on the left, what it holds on the right. The
- * count is real, and the video tally only appears when there is one.
+ * A day in the timeline. Just the date — the old header also carried "5 items ·
+ * 1 video", which turned every section heading into a stats line and made the
+ * grid read like a report. The count belongs to the screen's subtitle.
  */
 @Composable
 fun DateHeader(section: DaySection, modifier: Modifier = Modifier) {
-    Row(
+    Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(
-                start = Spacing.md,
-                end = Spacing.md,
-                top = Spacing.lg,
-                bottom = Spacing.sm,
-            ),
-        verticalAlignment = Alignment.CenterVertically,
+            .background(MaterialTheme.colorScheme.background)
+            .padding(start = Spacing.md, end = Spacing.md, top = Spacing.lg, bottom = Spacing.sm),
     ) {
         Text(
             text = section.label,
@@ -240,32 +225,24 @@ fun DateHeader(section: DaySection, modifier: Modifier = Modifier) {
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
-        Spacer(Modifier.width(Spacing.sm))
-        Text(
-            text = buildString {
-                append(itemCount(section.items.size))
-                val videos = section.videos
-                if (videos > 0) {
-                    append("  ·  ")
-                    append(if (videos == 1) "1 video" else "$videos videos")
-                }
-            },
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
         )
     }
 }
 
 /**
- * The library grid: one pass over the items, grouped under their capture date.
+ * The library grid: a scrolling column of day sections, each a sticky date
+ * heading followed by rows of squares.
  *
- * Date headings are full-width rows inside the grid rather than sticky headers,
- * because the LazyVerticalGrid in this Compose version has no sticky support. A
- * heading that scrolls away with its photos is honest; a hand-rolled pinned copy
- * of one would be a second source of truth for the same thing.
+ * The old version put the date headings inside a LazyVerticalGrid as ordinary
+ * full-span rows, because that Compose version has no sticky-header support in
+ * the grid. The consequence was that scrolling a long library left you with a
+ * wall of unlabelled photographs and no idea where you were in time — the exact
+ * thing a photo timeline exists to answer. A LazyColumn of section rows gives
+ * real pinned headers.
+ *
+ * [columns] comes from the window class, so a tablet gets six across and a
+ * phone three, rather than three 400dp tiles stretched over a landscape
+ * display.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -277,46 +254,49 @@ fun PhotoTimeline(
     onToggle: ((MediaItem) -> Unit)?,
     bottomPadding: Dp,
     modifier: Modifier = Modifier,
+    columns: Int = 3,
     header: (@Composable () -> Unit)? = null,
 ) {
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(3),
+    LazyColumn(
+        state = rememberLazyListState(),
         contentPadding = PaddingValues(bottom = bottomPadding),
-        horizontalArrangement = Arrangement.spacedBy(GUTTER),
-        verticalArrangement = Arrangement.spacedBy(GUTTER),
         modifier = modifier.fillMaxSize(),
     ) {
-        // A screen-level banner above the first date heading, inside the grid so
-        // it scrolls away with the photos instead of holding a fixed band of the
-        // screen forever.
         if (header != null) {
-            item(key = "timeline-header", span = { GridItemSpan(maxLineSpan) }, contentType = "header") {
-                header()
-            }
+            item(key = "timeline-header", contentType = "header") { header() }
         }
         sections.forEach { section ->
-            item(
-                key = "day-${section.dayStart}",
-                span = { GridItemSpan(maxLineSpan) },
-                contentType = "header",
-            ) {
+            stickyHeader(key = "day-${section.dayStart}") {
                 DateHeader(section)
             }
-            items(
-                items = section.items,
-                key = { it.id },
-                contentType = { "cell" },
-            ) { item ->
-                PhotoCell(
-                    item = item,
-                    selected = selectedIds.contains(item.id),
-                    selecting = selecting,
-                    onClick = { if (selecting && onToggle != null) onToggle(item) else onOpen(item) },
-                    // Null when the screen has no selection semantics at all, so a
-                    // read-only timeline does not carry a long press that does
-                    // nothing.
-                    onLongClick = onToggle?.let { toggle -> { toggle(item) } },
-                )
+            val rows = section.items.chunked(columns)
+            rows.forEachIndexed { rowIndex, rowItems ->
+                item(key = "row-${section.dayStart}-$rowIndex", contentType = "row") {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = GUTTER),
+                        horizontalArrangement = Arrangement.spacedBy(GUTTER),
+                    ) {
+                        rowItems.forEach { item ->
+                            PhotoCell(
+                                item = item,
+                                selected = selectedIds.contains(item.id),
+                                selecting = selecting,
+                                onClick = {
+                                    if (selecting && onToggle != null) onToggle(item) else onOpen(item)
+                                },
+                                onLongClick = onToggle?.let { toggle -> { toggle(item) } },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                        // Pad the final short row so its cells keep the same
+                        // width as every other row instead of stretching.
+                        repeat(columns - rowItems.size) {
+                            Spacer(Modifier.weight(1f))
+                        }
+                    }
+                }
             }
         }
     }
@@ -324,8 +304,7 @@ fun PhotoTimeline(
 
 /**
  * Album cover: a four-way mosaic when the album has enough photos to fill it,
- * otherwise the single newest one. Repeating one photo four times to complete the
- * grid would be a lie about how much is in the album.
+ * otherwise the single newest one.
  */
 @Composable
 fun AlbumCover(cover: List<MediaItem>, modifier: Modifier = Modifier) {

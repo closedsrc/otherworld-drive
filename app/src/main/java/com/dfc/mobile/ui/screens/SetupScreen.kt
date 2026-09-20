@@ -18,6 +18,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -101,16 +103,28 @@ fun SetupScreen(
             .fillMaxSize()
             .statusBarsPadding()
             .imePadding()
-            // Setup is a full-screen overlay with no bottom bar, so it has to
-            // clear the navigation bar itself or the Connect button sits under it
-            // on a three-button-navigation device.
             .navigationBarsPadding()
             .verticalScroll(rememberScrollState())
-            .padding(Spacing.lg),
+            .padding(horizontal = Spacing.lg),
     ) {
+        if (onCancel != null) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = Spacing.sm),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                com.dfc.mobile.ui.BarIcon(
+                    icon = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Back",
+                    onClick = onCancel,
+                )
+            }
+        }
+        Spacer(Modifier.height(Spacing.md))
         Text(
             text = "Connect this phone",
-            style = currentType.title,
+            style = currentType.display,
             color = MaterialTheme.colorScheme.onSurface,
         )
         Spacer(Modifier.height(Spacing.sm))
@@ -243,10 +257,6 @@ fun SetupScreen(
                     strokeWidth = 2.dp,
                     modifier = Modifier.size(18.dp),
                 )
-            }
-            if (onCancel != null) {
-                Spacer(Modifier.size(Spacing.sm))
-                TextButton(onClick = onCancel) { Text("Cancel") }
             }
         }
 

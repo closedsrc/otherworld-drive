@@ -421,22 +421,22 @@ class DfcApi(private val prefs: Prefs) {
         resp.use { return bodyJson(it).optString("id").ifBlank { null } }
     }
 
-    /** How many bytes the server already holds for this session. */
-    fun uploadSessionOffset(sessionId: String): Long {
-        val resp = client.newCall(
-            req("${base()}/api/uploads/session/$sessionId").get().build()
-        ).execute()
-        resp.use { resp2 ->
-            // GET on the session route is not served; fall back to committing
-            // only when the client's own bookkeeping says it is complete.
-            return bodyJson(resp2).optLong("received", 0L)
-        }
-    }
+    /**
+     * How many bytes the server already holds for a freshly opened session.
+     *
+     * Always zero, and deliberately not a request. The session route serves PUT
+     * only, so a GET is answered with 405 — which the run counted as a network
+     * failure and aborted the entire batch after three files. A session this
+     * client just opened has no bytes on the server by construction; the offset
+     * that matters is the one each PUT returns, and a rejected chunk recovers
+     * the server's expectation from the 416 body (see [putUploadChunk]).
+     */
+    fun uploadSessionOffset(sessionId: String): Long = 0L
 
     /**
      * Send one chunk at [offset]. Returns the server's new total, or -1 on
-     * failure. Callers retry from the returned offset, so a dropped connection
-     * resumes instead of restarting.
+     * failure. A 416 carries the offset the server actually expects, so a
+     * desynced client resumes from there instead of restarting the file.
      */
     fun putUploadChunk(sessionId: String, offset: Long, data: ByteArray, length: Int): Long {
         val body = data.copyOfRange(0, length)
@@ -446,9 +446,16 @@ class DfcApi(private val prefs: Prefs) {
             .header("Content-Range", "bytes $offset-${offset + length - 1}/")
             .build()
         val resp = client.newCall(req).execute()
-        resp.use {
-            if (!it.isSuccessful && it.code != 416) return -1L
-            return bodyJson(it).optLong("received", -1L)
+        resp.use { r ->
+            if (r.isSuccessful) return bodyJson(r).optLong("received", -1L)
+            // 416 = "a gap would corrupt the file"; its body names the offset the
+            // server wants. Returning it lets the caller seek and carry on.
+            if (r.code == 416) {
+                val text = r.body?.string().orEmpty()
+                Regex("""expected offset (\d+)""")
+                    .find(text)?.groupValues?.get(1)?.toLongOrNull()?.let { return it }
+            }
+            return -1L
         }
     }
 
@@ -595,6 +602,14 @@ class DfcApi(private val prefs: Prefs) {
          * verifies the password (rate-limited, Argon2id) and stores only a
          * hash; the plaintext token is in the response exactly once. Returns
          * (token, deviceId, null) on success or (null, null, error) on failure.
+         *
+         * The registration route is behind the write scope, and a phone that has
+         * never signed in has no credential at all — so asking for a token first
+         * is answered with "missing or invalid API token", which is what made
+         * password sign-in impossible on a fresh install. The unlock route is
+         * public and takes the same password, and its session cookie carries
+         * write scope, so the two calls are made in order: unlock to prove the
+         * password and obtain a session, then register with that session.
          */
         fun registerDevice(
             baseUrl: String,
@@ -605,13 +620,44 @@ class DfcApi(private val prefs: Prefs) {
                 .connectTimeout(15, TimeUnit.SECONDS)
                 .readTimeout(60, TimeUnit.SECONDS)
                 .build()
+            val root = baseUrl.trimEnd('/')
+
+            // 1. Unlock. Public route; verifies the password and hands back the
+            //    session cookie that authorises the registration below.
+            val session = try {
+                val body = JSONObject().put("password", password)
+                    .toString().toRequestBody("application/json".toMediaType())
+                regClient.newCall(
+                    Request.Builder().url("$root/api/auth/unlock").post(body).build()
+                ).execute().use { resp ->
+                    val text = resp.body?.string().orEmpty()
+                    val json = runCatching { JSONObject(text) }.getOrNull()
+                    if (!resp.isSuccessful || json?.optBoolean("ok") != true) {
+                        return Triple(
+                            null, null,
+                            json?.optString("error")?.takeIf { it.isNotBlank() }
+                                ?: "the drive refused the password",
+                        )
+                    }
+                    resp.header("Set-Cookie")
+                        ?.substringAfter("dfc_session=", "")
+                        ?.substringBefore(';')
+                        ?.takeIf { it.isNotBlank() }
+                }
+            } catch (e: Exception) {
+                Log.w("DfcApi", "unlock failed", e)
+                return Triple(null, null, e.message ?: "connection failed")
+            }
+
+            // 2. Register this device, carrying the session from step 1.
             val payload = JSONObject()
                 .put("name", deviceName)
                 .put("password", password)
             val body = payload.toString().toRequestBody("application/json".toMediaType())
             val request = Request.Builder()
-                .url(baseUrl.trimEnd('/') + "/api/devices/register")
+                .url("$root/api/devices/register")
                 .post(body)
+                .apply { if (session != null) header("Cookie", "dfc_session=$session") }
                 .build()
             return try {
                 regClient.newCall(request).execute().use { resp ->

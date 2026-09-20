@@ -277,8 +277,10 @@ class BackupWorker(appContext: Context, params: WorkerParameters) :
             val sessionId = api.openUploadSession(remoteName, item.size, parentId)
                 ?: throw java.io.IOException("could not open an upload session")
 
-            var offset = api.uploadSessionOffset(sessionId)
-            UploadTracker.addBytes(offset)
+            // A session this client just opened holds nothing, so the first
+            // chunk starts at zero. The offset each PUT returns is what keeps a
+            // resumed run honest.
+            var offset = 0L
 
             val input = applicationContext.contentResolver.openInputStream(uri)
                 ?: run {
@@ -287,36 +289,45 @@ class BackupWorker(appContext: Context, params: WorkerParameters) :
                 }
 
             input.use { stream ->
-                if (offset > 0) stream.skip(offset)
                 val buffer = ByteArray(RESUMABLE_CHUNK)
-                while (true) {
+                while (offset < item.size) {
                     if (isStopped) {
                         // Keep the session: the next run resumes from the offset
                         // the server already acknowledged.
                         return@withContext
                     }
+                    // skip() may return short on some providers, so loop until
+                    // the stream is actually positioned at the server's offset.
+                    var toSkip = offset
+                    while (toSkip > 0) {
+                        val skipped = stream.skip(toSkip)
+                        if (skipped <= 0) throw java.io.IOException("could not reach offset $offset")
+                        toSkip -= skipped
+                    }
+
                     val read = stream.read(buffer)
-                    if (read <= 0) break
+                    if (read <= 0) throw java.io.IOException("upload incomplete at $offset/${item.size}")
+
                     val newOffset = api.putUploadChunk(sessionId, offset, buffer, read)
                     if (newOffset < 0) {
-                        // Rejected (usually a gap): re-read the server's offset
-                        // and continue rather than failing the whole file.
-                        val serverOffset = api.uploadSessionOffset(sessionId)
-                        if (serverOffset < offset) {
-                            stream.close()
-                            throw java.io.IOException("upload session desync")
-                        }
-                        offset = serverOffset
-                        continue
+                        // A real failure (network, or a rejected chunk with no
+                        // offset in the body). Leave the session alive and let
+                        // the next run resume from the server's record.
+                        throw java.io.IOException("chunk rejected at $offset")
                     }
-                    UploadTracker.addBytes((newOffset - offset))
+                    UploadTracker.addBytes(newOffset - offset)
+                    if (newOffset < offset) {
+                        // The server is behind what we sent: the stream has to be
+                        // rewound, which a non-seekable provider input cannot do.
+                        // Reopen and skip to the server's offset instead.
+                        stream.close()
+                        throw java.io.IOException("upload session rewound to $newOffset")
+                    }
                     offset = newOffset
-                    if (offset >= item.size) break
                 }
             }
 
             if (offset < item.size) {
-                // Incomplete: leave the session alive so the next run resumes.
                 throw java.io.IOException("upload incomplete at $offset/${item.size}")
             }
             if (!api.commitUploadSession(sessionId)) {

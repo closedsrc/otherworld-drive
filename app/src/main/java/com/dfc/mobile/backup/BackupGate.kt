@@ -24,12 +24,14 @@ enum class BackupGate {
     ;
 
     /**
-     * Short enough for the strip on the Photos screen, and about what is being
-     * waited for rather than about the app being idle.
+     * Short enough for the status line on the Photos screen, and about what is
+     * being waited for rather than about the app being idle. READY reads as a
+     * reason too, so the caller can compose a full sentence ("6 items to back
+     * up") instead of the fragment "6 items · sends itself".
      */
     val waitingLabel: String
         get() = when (this) {
-            READY -> "sends itself"
+            READY -> "to back up"
             NO_NETWORK -> "waiting for a connection"
             WIFI_ONLY -> "waiting for Wi-Fi"
             BATTERY_LOW -> "waiting for the battery"
