@@ -90,6 +90,22 @@ class DfcViewModel(app: Application) : AndroidViewModel(app) {
     val api: DfcApi get() = DfcApi.get(getApplication())
 
     init {
+        // Re-arm the periodic backup on every launch, not just at setup.
+        //
+        // schedule() used to run only when the user finished setup, toggled
+        // Wi-Fi-only, or the phone rebooted. WorkManager persists its own jobs,
+        // but anything that clears them — a force-stop, a battery-optimisation
+        // sweep, an OEM "clean up" pass, clearing app data — left the phone with
+        // no periodic work and no path back to it short of reinstalling or
+        // rebooting. The app would look perfectly healthy, keep indexing photos
+        // as they were taken, and never upload them again.
+        //
+        // ExistingPeriodicWorkPolicy.UPDATE makes this idempotent: the same
+        // request simply updates the existing job in place, so an already
+        // scheduled backup is not restarted or duplicated by opening the app.
+        if (prefs.isConfigured) {
+            BackupWorker.schedule(getApplication(), prefs.wifiOnly)
+        }
         refresh()
         // The strip reports the pending count the last reload saw, and a run that
         // finishes while this screen is open changes it — 46 items can be down to
