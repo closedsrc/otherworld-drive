@@ -16,6 +16,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import com.dfc.mobile.ui.SnackbarOverlay
+import com.dfc.mobile.ui.ActionHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -141,6 +144,7 @@ private fun DfcApp(intent: Intent?) {
 
     val current = currentNavRoute(nav)
     val wearsShell = current == null || current.wearsShell
+    val snackbar = remember { SnackbarHostState() }
 
     Box(Modifier.fillMaxSize()) {
         if (wearsShell) {
@@ -159,6 +163,13 @@ private fun DfcApp(intent: Intent?) {
         } else {
             NavGraph(nav, vm, ui, sort, layout, { sort = it }, { layout = it })
         }
+
+        // Dialogs, the "copy it now" share sheet and the snackbar, mounted once
+        // above every destination. Nothing rendered UiAction before this, so New
+        // folder, Rename, Details and Save-to-device were dead taps and Delete
+        // fired with no confirmation.
+        ActionHost(vm = vm, snackbar = snackbar)
+        SnackbarOverlay(snackbar)
     }
 
     if (showPrimer) {
@@ -249,7 +260,7 @@ private fun NavGraph(
                         else -> vm.requestDownload(file)
                     }
                 },
-                onDelete = { files -> vm.delete(files) { } },
+                onDelete = { files -> vm.requestDelete(files) },
                 onShare = { file -> vm.share(file, 7) { url -> vm.lastShareUrl = url } },
                 onRename = { file -> vm.requestRename(file) },
                 onDownload = { file -> vm.requestDownload(file) },

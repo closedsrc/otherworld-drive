@@ -22,10 +22,25 @@
         android:label="@string/app_name"
         android:theme="@style/Theme.DfcMobile">
 
+        <!--
+          No android:configChanges. The old manifest suppressed
+          orientation/screenSize, so rotating the phone skipped the activity
+          rebuild entirely and the app kept the layout it was laid out with:
+
+          - turning to landscape left a portrait column stretched sideways
+          - the window-class calculation (3/4/6 grid columns, rail vs bar) ran
+            once at startup and never again, so a rotation never re-picked it
+          - the stale window is what made automated dumps report the wrong
+            screen dimensions for the rest of the session
+
+          Compose plus SavedStateHandle already survives the rebuild:
+          rememberSaveable holds the tab, sort and layout, and the typed route
+          restores the destination. Letting the activity restart is the correct
+          behaviour and costs nothing.
+        -->
         <activity
             android:name=".MainActivity"
-            android:exported="true"
-            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode">
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

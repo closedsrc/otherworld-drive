@@ -14,7 +14,9 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -32,6 +34,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
@@ -49,7 +52,11 @@ import com.dfc.mobile.ui.theme.Spacing
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import com.dfc.mobile.ui.theme.currentType
+
+/** How long Connect waits before reporting an unreachable drive. */
+private const val SETUP_TIMEOUT_MS = 15_000L
 
 /**
  * Connect this phone to a drive.
@@ -69,13 +76,13 @@ fun SetupScreen(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val existing = remember { Prefs.get(context) }
-    var serverUrl by remember { mutableStateOf(existing.serverUrl.ifEmpty { Server.DEFAULT_BASE_URL }) }
-    var password by remember { mutableStateOf("") }
-    var tokenMode by remember { mutableStateOf(false) }
-    var token by remember { mutableStateOf("") }
-    var wifiOnly by remember { mutableStateOf(existing.wifiOnly) }
-    var busy by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
+    var serverUrl by rememberSaveable { mutableStateOf(existing.serverUrl.ifEmpty { Server.DEFAULT_BASE_URL }) }
+    var password by rememberSaveable { mutableStateOf("") }
+    var tokenMode by rememberSaveable { mutableStateOf(false) }
+    var token by rememberSaveable { mutableStateOf("") }
+    var wifiOnly by rememberSaveable { mutableStateOf(existing.wifiOnly) }
+    var busy by rememberSaveable { mutableStateOf(false) }
+    var error by rememberSaveable { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     val canSubmit = if (tokenMode) {
@@ -94,6 +101,7 @@ fun SetupScreen(
             BackupWorker.runNow(context)
             onConnected()
         } else {
+            android.util.Log.d("SetupScreen", "finishWithToken FALSE msg=$message")
             error = message ?: "Could not reach the drive"
         }
     }
@@ -228,9 +236,25 @@ fun SetupScreen(
                             finishWithToken(ok, msg)
                         } else {
                             val deviceName = Build.MODEL?.takeIf { it.isNotBlank() } ?: "Android phone"
-                            val (newToken, _, regError) = withContext(Dispatchers.IO) {
-                                DfcApi.registerDevice(serverUrl.trim(), password, deviceName)
+                            // Bounded. An unreachable address used to leave the
+                            // button reading "Connect" — no spinner, no error —
+                            // for a full minute while the socket timed out,
+                            // which reads as a frozen app. Fifteen seconds is
+                            // long enough for a handshake on a slow link and
+                            // short enough that a typo is obviously a typo.
+                            val result = withTimeoutOrNull(SETUP_TIMEOUT_MS) {
+                                withContext(Dispatchers.IO) {
+                                    DfcApi.registerDevice(serverUrl.trim(), password, deviceName)
+                                }
                             }
+                            if (result == null) {
+                                finishWithToken(
+                                    false,
+                                    "Could not reach that drive. Check the address and try again.",
+                                )
+                                return@launch
+                            }
+                            val (newToken, _, regError) = result
                             if (newToken == null) {
                                 finishWithToken(false, regError)
                             } else {
@@ -260,17 +284,22 @@ fun SetupScreen(
             }
         }
 
+        // The error sits directly under the button rather than at the end of the
+        // scrollable column: at the bottom it was below the fold on a phone with
+        // the keyboard up, so a failed connection looked like nothing happened.
         error?.let { message ->
             Spacer(Modifier.height(Spacing.md))
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .padding(vertical = Spacing.sm),
+                    .clip(RoundedCornerShape(Radii.control))
+                    .background(MaterialTheme.colorScheme.errorContainer)
+                    .padding(Spacing.md),
             ) {
                 Text(
                     text = message,
                     style = currentType.bodyMuted,
-                    color = MaterialTheme.colorScheme.error,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
                 )
             }
         }

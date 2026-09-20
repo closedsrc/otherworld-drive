@@ -49,6 +49,7 @@ import com.dfc.mobile.ui.pressFeedback
 import com.dfc.mobile.ui.theme.Radii
 import com.dfc.mobile.ui.theme.Spacing
 import com.dfc.mobile.ui.theme.currentType
+import com.dfc.mobile.ui.theme.windowSize
 
 /**
  * Albums are the folders the phone's own camera app filed photos into (Camera,
@@ -203,6 +204,11 @@ fun AlbumDetailScreen(
             onOpen = { item -> onOpen(item, items) },
             onToggle = null,
             bottomPadding = Spacing.navClearance,
+            // Same density as the library it was opened from. Without this the
+            // album fell back to the default three columns while Photos drew
+            // four at the identical width, so opening an album silently changed
+            // the size of every photo on screen.
+            columns = windowSize.gridColumns,
         )
     }
 }

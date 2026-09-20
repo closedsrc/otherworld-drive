@@ -487,10 +487,69 @@ class DfcViewModel(app: Application) : AndroidViewModel(app) {
     fun requestRename(file: RemoteFile) { _action.value = UiAction.Rename(file) }
     fun requestDetails(file: RemoteFile) { _action.value = UiAction.Details(file) }
     fun requestNewFolder() { _action.value = UiAction.NewFolder }
+
+    /**
+     * Ask before deleting. The Files screen used to call delete() directly, so a
+     * tap on Delete moved files to the drive's trash with no confirmation — the
+     * DeleteDialog existed but nothing rendered it.
+     */
+    fun requestDelete(files: List<RemoteFile>) {
+        if (files.isNotEmpty()) _action.value = UiAction.DeleteRequest(files)
+    }
     fun requestViewerDetails(item: ViewerRequest) { _action.value = UiAction.ViewerDetails(item) }
     fun consumeAction() { _action.value = null }
 
     fun setMessage(text: String) { _action.value = UiAction.Message(text) }
+
+    /**
+     * Rename a file or folder on the drive, then refresh the listing so the row
+     * shows the new name rather than the cached old one.
+     */
+    fun rename(file: RemoteFile, newName: String, onDone: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                runCatching { api.renameFile(file.id, newName); true }.getOrDefault(false)
+            }
+            if (ok) {
+                folderCache.clear()
+                refreshCurrentFolder()
+            }
+            onDone(ok)
+        }
+    }
+
+    /**
+     * Save one drive file into the phone's Downloads folder through MediaStore,
+     * so it appears in the system Files app and survives an app uninstall —
+     * writing to the app's private cache would lose it.
+     */
+    fun download(file: RemoteFile, onDone: (String?) -> Unit) {
+        viewModelScope.launch {
+            val saved = withContext(Dispatchers.IO) {
+                runCatching {
+                    val resolver = getApplication<Application>().contentResolver
+                    val values = android.content.ContentValues().apply {
+                        put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, file.name)
+                        put(
+                            android.provider.MediaStore.MediaColumns.MIME_TYPE,
+                            file.mimeType.ifBlank { "application/octet-stream" },
+                        )
+                        put(
+                            android.provider.MediaStore.MediaColumns.RELATIVE_PATH,
+                            android.os.Environment.DIRECTORY_DOWNLOADS,
+                        )
+                    }
+                    val uri = resolver.insert(
+                        android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values
+                    ) ?: return@runCatching null
+                    resolver.openOutputStream(uri)?.use { out -> api.downloadTo(file.id, out) }
+                        ?: return@runCatching null
+                    file.name
+                }.getOrNull()
+            }
+            onDone(saved)
+        }
+    }
 
     /** Flip the Wi-Fi-only gate and re-arm the periodic job to match. */
     fun setWifiOnly(enabled: Boolean) {
@@ -703,6 +762,9 @@ sealed interface UiAction {
     data object NewFolder : UiAction
     data class ViewerDetails(val item: ViewerRequest) : UiAction
     data class Message(val text: String) : UiAction
+
+    /** A destructive action waiting for the user to confirm it. */
+    data class DeleteRequest(val files: List<RemoteFile>) : UiAction
 }
 
 /** What the viewer is showing, so Details can be requested without the item type. */

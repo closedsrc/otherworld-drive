@@ -621,14 +621,38 @@ class DfcApi(private val prefs: Prefs) {
                 .readTimeout(60, TimeUnit.SECONDS)
                 .build()
             val root = baseUrl.trimEnd('/')
+            val payload = JSONObject()
+                .put("name", deviceName)
+                .put("password", password)
+            val body = payload.toString().toRequestBody("application/json".toMediaType())
 
-            // 1. Unlock. Public route; verifies the password and hands back the
-            //    session cookie that authorises the registration below.
+            // The route is public: it is the endpoint that mints a credential, so
+            // requiring one would make it unreachable. Try it directly first.
+            val direct = runCatching {
+                regClient.newCall(
+                    Request.Builder().url("$root/api/devices/register").post(body).build()
+                ).execute().use { resp ->
+                    val json = JSONObject(resp.body?.string() ?: "{}")
+                    if (resp.isSuccessful && json.optBoolean("ok")) {
+                        Triple(json.optString("token"), json.optString("device_id"), null)
+                    } else {
+                        Triple(
+                            null, null,
+                            json.optString("error").ifEmpty { "the drive refused the registration" },
+                        )
+                    }
+                }
+            }.getOrNull()
+            if (direct?.first != null) return direct
+
+            // Older deployments gate this route behind the write scope. Unlock is
+            // public and takes the same password, and its session cookie carries
+            // write scope, so use it to authorise the registration.
             val session = try {
-                val body = JSONObject().put("password", password)
+                val unlockBody = JSONObject().put("password", password)
                     .toString().toRequestBody("application/json".toMediaType())
                 regClient.newCall(
-                    Request.Builder().url("$root/api/auth/unlock").post(body).build()
+                    Request.Builder().url("$root/api/auth/unlock").post(unlockBody).build()
                 ).execute().use { resp ->
                     val text = resp.body?.string().orEmpty()
                     val json = runCatching { JSONObject(text) }.getOrNull()
@@ -639,21 +663,24 @@ class DfcApi(private val prefs: Prefs) {
                                 ?: "the drive refused the password",
                         )
                     }
-                    resp.header("Set-Cookie")
-                        ?.substringAfter("dfc_session=", "")
-                        ?.substringBefore(';')
-                        ?.takeIf { it.isNotBlank() }
+                    // Every Set-Cookie header, not just the first: the response
+                    // sends more than one and header() returns only the opening
+                    // entry.
+                    resp.headers("Set-Cookie")
+                        .asSequence()
+                        .mapNotNull { h ->
+                            h.substringAfter("dfc_session=", "")
+                                .substringBefore(';')
+                                .trim()
+                                .takeIf { it.isNotBlank() }
+                        }
+                        .firstOrNull()
                 }
             } catch (e: Exception) {
                 Log.w("DfcApi", "unlock failed", e)
                 return Triple(null, null, e.message ?: "connection failed")
             }
 
-            // 2. Register this device, carrying the session from step 1.
-            val payload = JSONObject()
-                .put("name", deviceName)
-                .put("password", password)
-            val body = payload.toString().toRequestBody("application/json".toMediaType())
             val request = Request.Builder()
                 .url("$root/api/devices/register")
                 .post(body)
